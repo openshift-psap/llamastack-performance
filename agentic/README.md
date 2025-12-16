@@ -185,7 +185,7 @@ The LlamaStack operator is required for autoscaling support.
 ### Install Operator
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/llamastack/llama-stack-k8s-operator/main/release/operator.yaml
+oc apply -f https://raw.githubusercontent.com/llamastack/llama-stack-k8s-operator/main/release/operator.yaml
 ```
 
 **Verifies installation:**
