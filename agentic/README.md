@@ -170,6 +170,18 @@ If no tables appear, check LlamaStack logs for connection errors.
 
 ---
 
+#### 6. Deploy MCP Server (Optional)
+
+Only required for testing Responses API with tool calling.
+
+```bash
+oc apply -f test-deployment/mcp-deployment/nps-mcp-server-deployment.yaml -n bench
+```
+
+📖 **[See mcp-deployment/README.md](test-deployment/mcp-deployment/README.md) for details**
+
+---
+
 ### You're Ready!
 
 All components are deployed. 
