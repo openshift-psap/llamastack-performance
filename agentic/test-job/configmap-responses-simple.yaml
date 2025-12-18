@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: locust-responses-simple-test-files
+  namespace: bench
+data:
+  locustfile.py: |
+    from locust import task, between, events
+    from locust.contrib.oai import OpenAIUser
+    import random
+    import json
+    import time
+
+
+    class ResponsesAPISimpleUser(OpenAIUser):
+        """
+        Test user for Responses API without tools.
+        Measures pure Responses API overhead vs Chat Completions.
+        """
+        
+        wait_time = between(1, 2)
+        
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # Override the OpenAI client to use LlamaStack's base URL
+            # Append /v1/openai/v1 to reach LlamaStack's OpenAI-compatible endpoints
+            self.client.base_url = f"{self.host}/v1/openai/v1"
+        
+        # Sample questions for testing
+        questions = [
+            "What is photosynthesis?",
+            "Explain quantum mechanics in simple terms.",
+            "How does DNA replication work?",
+            "What causes earthquakes?",
+            "Describe the water cycle.",
+            "What is machine learning?",
+            "How do vaccines work?",
+            "What is climate change?",
+            "Explain the theory of relativity.",
+            "How does the human brain work?",
+        ]
+        
+        @task
+        def test_responses_api_simple(self):
+            """Test Responses API without tools"""
+            question = random.choice(self.questions)
+            
+            self.client.responses.create(
+                model="vllm-inference/llama-32-3b-instruct",
+                input=question,
+                # No tools - just simple Q&A
+                stream=False,
+            )
+

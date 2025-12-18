@@ -50,7 +50,9 @@ docker tag locust:mcp-metrics quay.io/YOUR_ORG/locust:mcp-metrics
 docker push quay.io/YOUR_ORG/locust:mcp-metrics
 ```
 
-**Note:** The Docker image is used in Kubernetes Job templates (see [`templates/`](../templates/) directory) for running tests entirely within the cluster with metrics scraping sidecars.
+**Note:** We built a Docker image from this fork and published it to `quay.io/rh-ee-tosokin/locust-openai:v1-mcp-metrics` (public). This image is used for cluster-based testing:
+- Simple job examples: [`test-job/`](../test-job/) - Basic Locust jobs without sidecars
+- Advanced jobs with metrics sidecars: [`templates/`](../templates/) - Jobs with DCGM, vLLM, and Prometheus scrapers
 
 ## Running Tests Locally
 
@@ -89,7 +91,6 @@ locust -f locustfiles/locustfile_responses_simple.py \
   --spawn-rate 128 \
   --run-time 300s \
   --host http://localhost:8321 \
-  --csv results/responses-simple \
   --only-summary
 ```
 
