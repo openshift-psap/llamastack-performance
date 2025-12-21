@@ -61,7 +61,7 @@ class ResponsesAPIMCPUser(OpenAIUser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Override to use LlamaStack
-        self.client.base_url = f"{self.host}/v1/openai/v1"
+        self.client.base_url = f"{self.host}/v1"
     
     @task
     def test_responses_with_mcp(self):

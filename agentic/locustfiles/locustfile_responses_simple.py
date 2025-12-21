@@ -20,8 +20,7 @@ class ResponsesAPISimpleUser(OpenAIUser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Override the OpenAI client to use LlamaStack's base URL
-        # Append /v1/openai/v1 to reach LlamaStack's OpenAI-compatible endpoints
-        self.client.base_url = f"{self.host}/v1/openai/v1"
+        self.client.base_url = f"{self.host}/v1"
     
     # Sample questions for testing
     questions = [
