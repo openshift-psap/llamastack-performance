@@ -1,0 +1,61 @@
+apiVersion: llamastack.io/v1alpha1
+kind: LlamaStackDistribution
+metadata:
+  name: llamastack-rhoai32-postgres-otel
+  namespace: llamastack
+spec:
+  replicas: 1
+  server:
+    autoscaling:
+      minReplicas: 1
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 75
+      targetMemoryUtilizationPercentage: 70
+    podOverrides:
+      serviceAccountName: default
+    containerSpec:
+      env:
+        - name: VLLM_URL
+          value: "http://llama-32-3b-instruct-predictor.bench.svc.cluster.local:80/v1"
+        - name: INFERENCE_MODEL
+          value: "llama-32-3b-instruct"
+        - name: VLLM_TLS_VERIFY
+          value: "false"
+        - name: FMS_ORCHESTRATOR_URL
+          value: "http://localhost:1234"
+        - name: ENABLE_SENTENCE_TRANSFORMERS
+          value: "true"
+        - name: EMBEDDING_PROVIDER
+          value: "sentence-transformers"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.llamastack.svc.cluster.local:4318"
+        - name: OTEL_SERVICE_NAME
+          value: "llamastack"
+        - name: POSTGRES_HOST
+          value: "postgres.llamastack.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+      name: llama-stack
+      port: 8321
+    distribution:
+      # Use whatever LlamaStack image you want to test
+      image: quay.io/opendatahub/llama-stack:latest
+    storage:
+      size: 20Gi
+      mountPath: /opt/app-root/src/.llama/distributions/rh
+
