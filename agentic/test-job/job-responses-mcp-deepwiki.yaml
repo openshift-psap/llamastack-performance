@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: locust-mcp-deepwiki
+  namespace: bench
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        job-name: locust-mcp-deepwiki
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: locust
+          # Use your custom Locust image with MCP metrics support
+          # Build from: https://github.com/tosokin/locust/tree/feature/openai-tool-and-streaming-metrics
+          image: quay.io/rh-ee-tosokin/locust-openai:v1-mcp-metrics
+          command: ["locust"]
+          args:
+            - "-f"
+            - "/tests/locustfile.py"
+            - "--host"
+            - "http://llamastack-rhoai32-postgres-otel-service.llamastack.svc.cluster.local:8321"
+            - "--headless"
+            - "--users"
+            - "128"
+            - "--spawn-rate"
+            - "128"
+            - "--run-time"
+            - "60s"
+            - "--csv"
+            - "/output/locust-mcp-results"
+            - "--only-summary"
+          env:
+            - name: OPENAI_API_KEY
+              value: "dummy-key"
+            - name: LOCUST_OUTPUT_DIR
+              value: "/output"
+          volumeMounts:
+            - name: test-files
+              mountPath: /tests
+            - name: results
+              mountPath: /output
+      volumes:
+        - name: test-files
+          configMap:
+            name: locust-mcp-deepwiki-test-files
+        - name: results
+          emptyDir: {}
