@@ -20,13 +20,25 @@ ConfigMap embedding the Responses API locustfile (based on [`locustfile_response
 **job-responses-simple.yaml**  
 Kubernetes Job that runs 128 concurrent Locust users testing Responses API without MCP tools. Tests stateful API operations (conversation persistence) without the complexity of tool calling. Job name: `locust-responses-simple-c128`.
 
-### Responses API with MCP Test
+### Responses API with MCP Test (National Parks)
 
 **configmap-responses-mcp.yaml**  
 ConfigMap embedding the Responses API locustfile (based on [`locustfile_responses_mcp.py`](../locustfiles/locustfile_responses_mcp.py)) with MCP tool calling logic. Includes event listener that captures MCP metrics (tool calls, tokens) and exports to `mcp_metrics.csv`. Creates ConfigMap named `locust-mcp-test-files` in `bench` namespace.
 
 **job-responses-mcp.yaml**  
 Kubernetes Job that runs 128 concurrent Locust users testing the Responses API with National Parks MCP tools. Sets `LOCUST_OUTPUT_DIR=/output` for metrics export. Job name: `locust-mcp-c128`.
+
+**Prerequisites:** Requires the NPS MCP server deployed in cluster. See [test-deployment/mcp-deployment/](../test-deployment/mcp-deployment/).
+
+### Responses API with MCP Test (DeepWiki)
+
+**configmap-responses-mcp-deepwiki.yaml**  
+ConfigMap embedding a Responses API locustfile that tests MCP tool calling with the external DeepWiki server (`https://mcp.deepwiki.com/mcp`). The test queries documentation for the `openai/openai-python` GitHub repository using three sequential tool calls: `read_wiki_structure` to discover topics, then `ask_question` twice to ask about the library's purpose and installation. Includes the same MCP metrics event listener that exports to `mcp_metrics.csv`. Creates ConfigMap named `locust-mcp-deepwiki-test-files` in `bench` namespace.
+
+**job-responses-mcp-deepwiki.yaml**  
+Kubernetes Job that runs 128 concurrent Locust users for 60 seconds testing the Responses API with DeepWiki MCP tools. Unlike the National Parks test, DeepWiki is an external public MCP server - no in-cluster deployment required. Job name: `locust-mcp-deepwiki`.
+
+**Note:** DeepWiki responses can be large (querying full repo documentation), which may result in longer response times compared to National Parks.
 
 ### vLLM Direct Test
 
@@ -57,11 +69,11 @@ Kubernetes Job that runs 128 concurrent Locust users directly against vLLM predi
 
 **Purpose:** Measure Responses API overhead vs Chat Completions (both without tools)
 
-### Responses API with MCP Test
+### Responses API with MCP Test (National Parks)
 
 **What it does:**
 - Sends requests asking to search Rhode Island parks and get events
-- LlamaStack discovers 5 tools from the MCP server
+- LlamaStack discovers 5 tools from the NPS MCP server
 - LlamaStack autonomously calls `search_parks`
 - Generates final natural language response
 
@@ -69,9 +81,28 @@ Kubernetes Job that runs 128 concurrent Locust users directly against vLLM predi
 - Standard Locust CSVs (stats, history)
 - `mcp_metrics.csv` - Tool call counts, names, tokens per request
 
-**Prerequisites:** MCP server deployed (`nps-mcp-server`)
+**Prerequisites:** NPS MCP server deployed in cluster (`nps-mcp-server`)
 
-**Purpose:** Stress test stateful operations, tool calling, and database writes
+**Purpose:** Stress test stateful operations, tool calling, and database writes with an in-cluster MCP server
+
+### Responses API with MCP Test (DeepWiki)
+
+**What it does:**
+- Sends requests asking about the `openai/openai-python` GitHub repository
+- LlamaStack discovers 3 tools from the external DeepWiki MCP server
+- LlamaStack performs 3 sequential tool calls:
+  1. `read_wiki_structure` - Get documentation structure
+  2. `ask_question` - "What is this library for?"
+  3. `ask_question` - "How do I install it?"
+- Generates final natural language response summarizing the answers
+
+**Outputs:**
+- Standard Locust CSVs (stats, history)
+- `mcp_metrics.csv` - Tool call counts, names, tokens per request
+
+**Prerequisites:** None - DeepWiki is a public external MCP server
+
+**Purpose:** High-concurrency LlamaStack performance testing with MCP tools. Unlike National Parks API (rate-limited to ~20 calls/hour), DeepWiki can handle sustained high load, so tests won't be affected by MCP server limitations and we can focus on LlamaStack performance.
 
 ### vLLM Direct Test
 
@@ -100,10 +131,16 @@ oc apply -f configmap-responses-simple.yaml
 oc apply -f job-responses-simple.yaml
 ```
 
-**Responses API with MCP:**
+**Responses API with MCP (National Parks):**
 ```bash
 oc apply -f configmap-responses-mcp.yaml
 oc apply -f job-responses-mcp.yaml
+```
+
+**Responses API with MCP (DeepWiki):**
+```bash
+oc apply -f configmap-responses-mcp-deepwiki.yaml
+oc apply -f job-responses-mcp-deepwiki.yaml
 ```
 
 **vLLM direct:**
