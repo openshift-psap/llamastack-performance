@@ -47,7 +47,7 @@ LlamaStack  --->  OTel Collector  --->  Tempo Gateway  --->  Tempo Storage  --->
 | `tempo-monolithic.yaml` | TempoMonolithic with multitenancy enabled and persistent storage |
 | `otel-collector-deployment.yaml` | OTel Collector with OAuth authentication, k8sattributes processor, and RBAC |
 | `llamastack-distribution-postgres-otel.yaml` | LlamaStack with OpenTelemetry environment variables and tracing patch |
-| `tracing-patch-configmap.yaml` | **NEW** - Patched tracing module to fix trace context issues |
+| `tracing-patch-configmap.yaml` | Patched tracing module to fix trace context issues |
 
 ## Tracing Patch
 
@@ -65,11 +65,24 @@ The `tracing-patch-configmap.yaml` contains a patched version of LlamaStack's `t
 
 ### How the Patch is Applied
 
-The patch is applied via an init container in the LlamaStackDistribution:
+The patch is applied using a Kubernetes `subPath` volume mount:
 
-1. The `tracing-patch-configmap.yaml` is mounted as a volume
-2. An init container copies the patched `tracing.py` to the Python site-packages directory
-3. The main container shares this directory via an `emptyDir` volume
+```yaml
+volumes:
+  - name: tracing-patch
+    configMap:
+      name: llamastack-tracing-patch
+
+volumeMounts:
+  - name: tracing-patch
+    mountPath: /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+    subPath: tracing.py
+```
+
+This approach:
+- Mounts **only** the `tracing.py` file from the ConfigMap
+- Leaves all other files in the `telemetry/` directory intact (e.g., `trace_protocol.py`, `__init__.py`)
+- No init container required
 
 ## Prerequisites
 
@@ -318,9 +331,7 @@ env:
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: Tells LlamaStack where to send traces (the collector we deployed in Step 4)
 - `OTEL_SERVICE_NAME`: The service name shown in the tracing UI
 
-The LlamaStackDistribution now includes:
-- An init container that applies the tracing patch
-- Volume mounts for the patch ConfigMap and shared site-packages directory
+The LlamaStackDistribution uses a `subPath` volume mount to replace only the `tracing.py` file while keeping all other telemetry module files intact.
 
 **Important:** Update `VLLM_URL` to match your vLLM InferenceService:
 ```
@@ -334,16 +345,18 @@ oc rollout status deployment/llamastack-rhoai32-postgres-otel -n llamastack
 
 ### Verify Patch Application
 
-Check that the init container applied the patch successfully:
+Verify that the patched `tracing.py` is mounted correctly:
 
 ```bash
-oc logs deployment/llamastack-rhoai32-postgres-otel -c apply-tracing-patch -n llamastack
+oc exec deployment/llamastack-rhoai32-postgres-otel -n llamastack -- \
+  head -20 /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
 ```
 
-Expected output:
+You should see the patch header comment:
 ```
-Applying tracing patch...
-Tracing patch applied successfully
+# PATCHED VERSION v2 - Fixes:
+# 1. Class-level spans list bug (trace mixing between concurrent requests)
+# 2. start_trace overwriting existing trace context (trace naming issues)
 ```
 
 ## Viewing Traces
