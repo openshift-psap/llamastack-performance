@@ -13,6 +13,10 @@ spec:
       targetMemoryUtilizationPercentage: 70
     podOverrides:
       serviceAccountName: default
+      volumes:
+        - name: tracing-patch
+          configMap:
+            name: llamastack-tracing-patch
     containerSpec:
       env:
         - name: VLLM_URL
@@ -52,10 +56,15 @@ spec:
               key: POSTGRES_PASSWORD
       name: llama-stack
       port: 8321
+      # Mount only the patched tracing.py file using subPath
+      # This replaces only tracing.py while keeping all other files in the telemetry directory intact
+      volumeMounts:
+        - name: tracing-patch
+          mountPath: /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+          subPath: tracing.py
     distribution:
       # Use whatever LlamaStack image you want to test
       image: quay.io/opendatahub/llama-stack:latest
     storage:
       size: 20Gi
       mountPath: /opt/app-root/src/.llama/distributions/rh
-

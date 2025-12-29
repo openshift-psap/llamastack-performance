@@ -22,7 +22,43 @@ LlamaStackDistribution  ------>  OpenTelemetry Collector  ------>  Tempo + Jaege
 |------|-------------|
 | `tempo-monolithic.yaml` | TempoMonolithic CR - trace storage + Jaeger UI |
 | `otel-collector-deployment.yaml` | OTel (OpenTelemetry) Collector ConfigMap, Deployment, and Service |
-| `llamastack-distribution-postgres-otel.yaml` | LlamaStack with OpenTelemetry environment variables |
+| `llamastack-distribution-postgres-otel.yaml` | LlamaStack with OpenTelemetry environment variables and tracing patch |
+| `tracing-patch-configmap.yaml` | Patched tracing module to fix trace context issues |
+
+## Tracing Patch
+
+The `tracing-patch-configmap.yaml` contains a patched version of LlamaStack's `tracing.py` module that fixes two critical issues:
+
+### Issues Fixed
+
+1. **Class-level spans list bug (trace mixing)**
+   - **Problem**: The original implementation used a class-level `spans` list that was shared across all `TraceContext` instances. This caused trace data from concurrent requests to mix together.
+   - **Fix**: Changed to instance-level `spans` list so each request has its own isolated span stack.
+
+2. **start_trace overwriting existing trace context (trace naming issues)**
+   - **Problem**: When `start_trace()` was called within an already-active trace (e.g., from a nested operation), it would create a new trace ID, fragmenting the trace into disconnected pieces.
+   - **Fix**: Added logic to detect existing trace context and create a nested span instead of a new trace.
+
+### How the Patch is Applied
+
+The patch is applied using a Kubernetes `subPath` volume mount:
+
+```yaml
+volumes:
+  - name: tracing-patch
+    configMap:
+      name: llamastack-tracing-patch
+
+volumeMounts:
+  - name: tracing-patch
+    mountPath: /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+    subPath: tracing.py
+```
+
+This approach:
+- Mounts **only** the `tracing.py` file from the ConfigMap
+- Leaves all other files in the `telemetry/` directory intact (e.g., `trace_protocol.py`, `__init__.py`)
+- No init container required
 
 ## Prerequisites
 
@@ -116,7 +152,15 @@ Wait for collector to be ready:
 oc rollout status deployment/otel-collector -n llamastack
 ```
 
-### Step 4: Deploy LlamaStackDistribution with OpenTelemetry
+### Step 4: Deploy Tracing Patch ConfigMap
+
+```bash
+oc apply -f tracing-patch-configmap.yaml
+```
+
+This creates the ConfigMap containing the patched `tracing.py` module.
+
+### Step 5: Deploy LlamaStackDistribution with OpenTelemetry
 
 ```bash
 oc apply -f llamastack-distribution-postgres-otel.yaml
@@ -138,6 +182,8 @@ env:
     value: "http://llama-32-3b-instruct-predictor.bench.svc.cluster.local:80/v1"
 ```
 
+The LlamaStackDistribution uses a `subPath` volume mount to replace only the `tracing.py` file while keeping all other telemetry module files intact.
+
 **Important**: Update `VLLM_URL` to match your vLLM InferenceService. The URL format is:
 ```
 http://<inferenceservice-name>-predictor.<namespace>.svc.cluster.local:80/v1
@@ -146,6 +192,22 @@ http://<inferenceservice-name>-predictor.<namespace>.svc.cluster.local:80/v1
 Wait for LlamaStack to be ready:
 ```bash
 oc rollout status deployment/llamastack-rhoai32-postgres-otel -n llamastack
+```
+
+### Verify Patch Application
+
+Verify that the patched `tracing.py` is mounted correctly:
+
+```bash
+oc exec deployment/llamastack-rhoai32-postgres-otel -n llamastack -- \
+  head -20 /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+```
+
+You should see the patch header comment:
+```
+# PATCHED VERSION v2 - Fixes:
+# 1. Class-level spans list bug (trace mixing between concurrent requests)
+# 2. start_trace overwriting existing trace context (trace naming issues)
 ```
 
 ## Accessing Jaeger UI
@@ -165,3 +227,32 @@ The Tempo deployment creates a route automatically. Get the URL:
 oc get route -n openshift-tempo-operator
 ```
 
+## Troubleshooting
+
+### Traces not appearing in Jaeger UI
+
+1. Check OTel Collector logs:
+   ```bash
+   oc logs deployment/otel-collector -n llamastack
+   ```
+
+2. Verify LlamaStack is sending traces:
+   ```bash
+   oc logs deployment/llamastack-rhoai32-postgres-otel -n llamastack | grep -i trace
+   ```
+
+3. Check Tempo is receiving traces:
+   ```bash
+   oc logs pod/tempo-tracing-0 -n openshift-tempo-operator
+   ```
+
+### Trace context issues (mixed or fragmented traces)
+
+If you see traces being split into multiple disconnected pieces, verify the patch is applied:
+
+```bash
+oc exec deployment/llamastack-rhoai32-postgres-otel -n llamastack -- \
+  grep -A5 "PATCHED VERSION" /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+```
+
+You should see the patch header comment in the output.
