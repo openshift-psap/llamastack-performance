@@ -13,6 +13,28 @@ spec:
       targetMemoryUtilizationPercentage: 70
     podOverrides:
       serviceAccountName: default
+      # Init container to apply the tracing patch
+      initContainers:
+        - name: apply-tracing-patch
+          image: quay.io/opendatahub/llama-stack:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Applying tracing patch..."
+              cp /patch/tracing.py /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry/tracing.py
+              echo "Tracing patch applied successfully"
+          volumeMounts:
+            - name: tracing-patch
+              mountPath: /patch
+            - name: site-packages
+              mountPath: /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry
+      volumes:
+        - name: tracing-patch
+          configMap:
+            name: llamastack-tracing-patch
+        - name: site-packages
+          emptyDir: {}
     containerSpec:
       env:
         - name: VLLM_URL
@@ -52,10 +74,13 @@ spec:
               key: POSTGRES_PASSWORD
       name: llama-stack
       port: 8321
+      # Volume mount for the patched telemetry module
+      volumeMounts:
+        - name: site-packages
+          mountPath: /opt/app-root/lib/python3.11/site-packages/llama_stack/providers/utils/telemetry
     distribution:
       # Use whatever LlamaStack image you want to test
       image: quay.io/opendatahub/llama-stack:latest
     storage:
       size: 20Gi
       mountPath: /opt/app-root/src/.llama/distributions/rh
-
