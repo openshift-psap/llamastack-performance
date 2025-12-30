@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  # namespace: will be substituted by run_full_test.sh
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318  # LlamaStack sends traces here (HTTP)
+    
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+    
+    exporters:
+      # Send traces to Tempo-avis (your isolated instance)
+      otlp/tempo:
+        endpoint: tempo-tracing-avis.openshift-tempo-operator.svc.cluster.local:4317
+        tls:
+          insecure: true
+      # Also log to stdout for debugging
+      debug:
+        verbosity: detailed
+    
+    service:
+      pipelines:
+        # Only traces pipeline - LlamaStack sends application traces via OTLP
+        # Metrics are collected separately by Locust job sidecars (Prometheus scraping)
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/tempo, debug]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  # namespace: will be substituted by run_full_test.sh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector:latest
+        args:
+          - "--config=/conf/otel-collector-config.yaml"
+        ports:
+        - containerPort: 4318  # OTLP HTTP
+        volumeMounts:
+        - name: otel-collector-config-vol
+          mountPath: /conf
+      volumes:
+      - name: otel-collector-config-vol
+        configMap:
+          name: otel-collector-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  # namespace: will be substituted by run_full_test.sh
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-http
+    protocol: TCP
+    port: 4318
+    targetPort: 4318
+  type: ClusterIP
+

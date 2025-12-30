@@ -1,0 +1,645 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trace-collector-script
+  # namespace: will be substituted by run_full_test.sh
+data:
+  trace_collector.py: |
+    #!/usr/bin/env python3
+    """
+    LlamaStack Trace Collector - Automated OTEL Trace Collection and Analysis
+    
+    Uses Locust's actual shutdown time from logs for accurate filtering.
+    """
+
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+    import time
+    from collections import defaultdict
+    from datetime import datetime, timezone, timedelta
+    from pathlib import Path
+    from typing import Any, Optional
+    import statistics
+
+
+    # =============================================================================
+    # CONFIGURATION
+    # =============================================================================
+
+    EXCLUDED_ENDPOINTS = [
+        "/v1/health", "/v1/version", "/v1/providers",
+        "/health", "/healthz", "/readyz", "/livez", "/metrics",
+    ]
+
+    EXCLUDED_OPERATIONS = ["/v1/health", "/v1/version", "/v1/providers", "/health"]
+
+    DEFAULT_NAMESPACE = os.environ.get("OTEL_NAMESPACE", "avis-project")
+    OTEL_COLLECTOR_LABEL = os.environ.get("OTEL_COLLECTOR_LABEL", "app=otel-collector")
+
+
+    # =============================================================================
+    # LOG PARSING
+    # =============================================================================
+
+    def parse_otel_log_timestamp(timestamp_str: str) -> datetime:
+        """Parse OTEL log timestamp format."""
+        timestamp_str = timestamp_str.strip()
+        if timestamp_str.endswith(' UTC'):
+            timestamp_str = timestamp_str[:-4]
+        
+        match = re.match(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.(\d+) ([+-]\d{4})', timestamp_str)
+        if match:
+            date_time_part = match.group(1)
+            frac_seconds = match.group(2)[:6].ljust(6, '0')
+            tz_part = match.group(3)
+            timestamp_str = f"{date_time_part}.{frac_seconds} {tz_part}"
+        
+        try:
+            dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f %z')
+        except ValueError:
+            try:
+                dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S %z')
+            except ValueError:
+                dt = datetime.fromisoformat(timestamp_str.replace(' ', 'T'))
+        return dt
+
+
+    def parse_otel_logs(log_content: str) -> list:
+        """Parse OTEL collector debug logs into structured span data."""
+        spans = []
+        current_span = None
+        in_attributes = False
+        
+        for line in log_content.split('\n'):
+            line = line.strip()
+            
+            if line.startswith('Span #'):
+                if current_span:
+                    spans.append(current_span)
+                current_span = {
+                    'traceID': None, 'spanID': None, 'operationName': None,
+                    'parentSpanID': None, 'startTime': None, 'endTime': None,
+                    'duration': 0, 'tags': [], 'references': [],
+                }
+                in_attributes = False
+                continue
+            
+            if not current_span:
+                continue
+            
+            if line.startswith('Trace ID'):
+                match = re.search(r':\s*(\S+)', line)
+                if match:
+                    current_span['traceID'] = match.group(1)
+            
+            elif line.startswith('Parent ID'):
+                match = re.search(r':\s*(\S+)', line)
+                if match and match.group(1):
+                    parent_id = match.group(1)
+                    if parent_id:
+                        current_span['parentSpanID'] = parent_id
+                        current_span['references'] = [{
+                            'refType': 'CHILD_OF',
+                            'traceID': current_span['traceID'],
+                            'spanID': parent_id
+                        }]
+            
+            elif line.startswith('ID') and not line.startswith('InstrumentationScope'):
+                match = re.search(r'^ID\s*:\s*(\S+)', line)
+                if match:
+                    current_span['spanID'] = match.group(1)
+            
+            elif line.startswith('Name'):
+                match = re.search(r':\s*(.+)', line)
+                if match:
+                    current_span['operationName'] = match.group(1).strip()
+            
+            elif line.startswith('Kind'):
+                match = re.search(r':\s*(.+)', line)
+                if match:
+                    current_span['tags'].append({
+                        'key': 'span.kind', 'type': 'string',
+                        'value': match.group(1).strip().lower()
+                    })
+            
+            elif line.startswith('Start time'):
+                match = re.search(r':\s*(.+)', line)
+                if match:
+                    try:
+                        dt = parse_otel_log_timestamp(match.group(1))
+                        current_span['startTime'] = int(dt.timestamp() * 1_000_000)
+                    except Exception as e:
+                        print(f"Warning: Could not parse start time: {e}")
+            
+            elif line.startswith('End time'):
+                match = re.search(r':\s*(.+)', line)
+                if match:
+                    try:
+                        dt = parse_otel_log_timestamp(match.group(1))
+                        end_time_us = int(dt.timestamp() * 1_000_000)
+                        current_span['endTime'] = end_time_us
+                        if current_span['startTime']:
+                            current_span['duration'] = end_time_us - current_span['startTime']
+                    except Exception as e:
+                        print(f"Warning: Could not parse end time: {e}")
+            
+            elif line.startswith('Status code'):
+                match = re.search(r':\s*(.+)', line)
+                if match:
+                    current_span['tags'].append({
+                        'key': 'otel.status_code', 'type': 'string',
+                        'value': match.group(1).strip()
+                    })
+            
+            elif line.startswith('Attributes:'):
+                in_attributes = True
+            
+            elif in_attributes and line.startswith('->'):
+                match = re.search(r'->\s*(\S+):\s*(\w+)\((.+)\)', line)
+                if match:
+                    key, value_type, value = match.group(1), match.group(2), match.group(3)
+                    if value_type == 'Bool':
+                        value = value.lower() == 'true'
+                        tag_type = 'bool'
+                    elif value_type == 'Int':
+                        value = int(value)
+                        tag_type = 'int64'
+                    else:
+                        tag_type = 'string'
+                    current_span['tags'].append({'key': key, 'type': tag_type, 'value': value})
+        
+        if current_span and current_span['traceID']:
+            spans.append(current_span)
+        
+        return spans
+
+
+    def get_tag_value(tags: list, key: str) -> Any:
+        for tag in tags:
+            if tag.get('key') == key:
+                return tag.get('value')
+        return None
+
+
+    # =============================================================================
+    # TRACE FILTERING
+    # =============================================================================
+
+    def is_excluded_trace(operation_name: str, tags: list) -> bool:
+        if not operation_name:
+            return True
+        for excluded in EXCLUDED_OPERATIONS:
+            if excluded.lower() in operation_name.lower():
+                return True
+        raw_path = get_tag_value(tags, 'raw_path')
+        if raw_path:
+            for excluded in EXCLUDED_ENDPOINTS:
+                if excluded.lower() in raw_path.lower():
+                    return True
+        return False
+
+
+    def filter_traces_by_time(traces: dict, test_end_time: datetime) -> dict:
+        """Filter traces completed before Locust shutdown. Must have /v1/responses root."""
+        test_end_time_us = int(test_end_time.timestamp() * 1_000_000)
+        filtered_traces = {}
+        
+        for trace_id, spans in traces.items():
+            root_spans = [s for s in spans if not s.get('parentSpanID') and s.get('operationName') == '/v1/responses']
+            
+            if not root_spans:
+                continue
+            
+            trace_valid = True
+            for root_span in root_spans:
+                end_time = root_span.get('endTime')
+                if not end_time or end_time > test_end_time_us:
+                    trace_valid = False
+                    break
+            
+            if trace_valid:
+                filtered_traces[trace_id] = spans
+        
+        return filtered_traces
+
+
+    def filter_excluded_traces(traces: dict) -> dict:
+        filtered_traces = {}
+        for trace_id, spans in traces.items():
+            root_spans = [s for s in spans if not s.get('parentSpanID') or len(s.get('references', [])) == 0]
+            excluded = False
+            for root_span in root_spans:
+                if is_excluded_trace(root_span.get('operationName'), root_span.get('tags', [])):
+                    excluded = True
+                    break
+            if not excluded:
+                filtered_traces[trace_id] = spans
+        return filtered_traces
+
+
+    def group_spans_by_trace(spans: list) -> dict:
+        traces = defaultdict(list)
+        for span in spans:
+            trace_id = span.get('traceID')
+            if trace_id:
+                traces[trace_id].append(span)
+        return dict(traces)
+
+
+    # =============================================================================
+    # REPORT GENERATION
+    # =============================================================================
+
+    def generate_jaeger_format(traces: dict) -> dict:
+        jaeger_traces = []
+        for trace_id, spans in traces.items():
+            process = {
+                'serviceName': 'llamastack',
+                'tags': [
+                    {'key': 'telemetry.sdk.language', 'type': 'string', 'value': 'python'},
+                    {'key': 'telemetry.sdk.name', 'type': 'string', 'value': 'opentelemetry'}
+                ]
+            }
+            jaeger_spans = []
+            for span in spans:
+                jaeger_spans.append({
+                    'traceID': span['traceID'],
+                    'spanID': span['spanID'],
+                    'operationName': span['operationName'],
+                    'references': span.get('references', []),
+                    'startTime': span['startTime'],
+                    'duration': span['duration'],
+                    'tags': span.get('tags', []),
+                    'logs': [],
+                    'processID': 'p1',
+                    'warnings': []
+                })
+            jaeger_traces.append({
+                'traceID': trace_id,
+                'spans': jaeger_spans,
+                'processes': {'p1': process},
+                'warnings': None
+            })
+        return {'data': jaeger_traces}
+
+
+    def microseconds_to_ms(us: int) -> float:
+        return us / 1000
+
+
+    def generate_analysis_report(traces: dict) -> dict:
+        all_spans = []
+        for spans in traces.values():
+            all_spans.extend(spans)
+        
+        results = {
+            'summary': {},
+            'operation_stats': {},
+            'trace_stats': {},
+            'llm_analysis': {}
+        }
+        
+        # Summary
+        total_traces = len(traces)
+        total_spans = len(all_spans)
+        results['summary'] = {
+            'total_traces': total_traces,
+            'total_spans': total_spans,
+            'avg_spans_per_trace': round(total_spans / total_traces, 2) if total_traces > 0 else 0
+        }
+        
+        # Operation stats
+        operations = defaultdict(list)
+        for span in all_spans:
+            op_name = span.get('operationName', 'unknown')
+            duration = span.get('duration', 0)
+            operations[op_name].append(duration)
+        
+        for op_name, durations in sorted(operations.items(), key=lambda x: sum(x[1]), reverse=True):
+            count = len(durations)
+            total_us = sum(durations)
+            avg_ms = microseconds_to_ms(statistics.mean(durations)) if durations else 0
+            
+            if len(durations) >= 2:
+                p50_ms = microseconds_to_ms(statistics.median(durations))
+                sorted_dur = sorted(durations)
+                p95_idx = int(len(sorted_dur) * 0.95)
+                p99_idx = int(len(sorted_dur) * 0.99)
+                p95_ms = microseconds_to_ms(sorted_dur[min(p95_idx, len(sorted_dur)-1)])
+                p99_ms = microseconds_to_ms(sorted_dur[min(p99_idx, len(sorted_dur)-1)])
+            else:
+                p50_ms = p95_ms = p99_ms = avg_ms
+            
+            results['operation_stats'][op_name] = {
+                'count': count,
+                'total_ms': round(microseconds_to_ms(total_us), 2),
+                'avg_ms': round(avg_ms, 2),
+                'p50_ms': round(p50_ms, 2),
+                'p95_ms': round(p95_ms, 2),
+                'p99_ms': round(p99_ms, 2),
+                'min_ms': round(microseconds_to_ms(min(durations)), 2) if durations else 0,
+                'max_ms': round(microseconds_to_ms(max(durations)), 2) if durations else 0
+            }
+        
+        # Trace stats (root /v1/responses spans)
+        responses_durations = []
+        for trace_id, spans in traces.items():
+            for span in spans:
+                if not span.get('parentSpanID') and span.get('operationName') == '/v1/responses':
+                    responses_durations.append(span.get('duration', 0))
+        
+        if responses_durations:
+            durations = responses_durations
+            count = len(durations)
+            avg_ms = microseconds_to_ms(statistics.mean(durations))
+            
+            if len(durations) >= 2:
+                p50_ms = microseconds_to_ms(statistics.median(durations))
+                sorted_dur = sorted(durations)
+                p95_idx = int(len(sorted_dur) * 0.95)
+                p95_ms = microseconds_to_ms(sorted_dur[min(p95_idx, len(sorted_dur)-1)])
+                std_ms = microseconds_to_ms(statistics.stdev(durations))
+            else:
+                p50_ms = p95_ms = avg_ms
+                std_ms = 0
+            
+            results['trace_stats']['/v1/responses'] = {
+                'count': count,
+                'avg_ms': round(avg_ms, 2),
+                'p50_ms': round(p50_ms, 2),
+                'p95_ms': round(p95_ms, 2),
+                'min_ms': round(microseconds_to_ms(min(durations)), 2),
+                'max_ms': round(microseconds_to_ms(max(durations)), 2),
+                'std_ms': round(std_ms, 2)
+            }
+        
+        # LLM Analysis
+        inference_spans = [s for s in all_spans if 'InferenceRouter' in s.get('operationName', '')]
+        if inference_spans:
+            inference_by_method = defaultdict(list)
+            for span in inference_spans:
+                method = span.get('operationName', 'unknown')
+                inference_by_method[method].append(span.get('duration', 0))
+            
+            for method, durations in sorted(inference_by_method.items(), key=lambda x: sum(x[1]), reverse=True):
+                count = len(durations)
+                avg_ms = microseconds_to_ms(statistics.mean(durations)) if durations else 0
+                
+                if len(durations) >= 2:
+                    p50_ms = microseconds_to_ms(statistics.median(durations))
+                    sorted_dur = sorted(durations)
+                    p95_idx = int(len(sorted_dur) * 0.95)
+                    p95_ms = microseconds_to_ms(sorted_dur[min(p95_idx, len(sorted_dur)-1)])
+                else:
+                    p50_ms = p95_ms = avg_ms
+                
+                results['llm_analysis'][method] = {
+                    'count': count,
+                    'total_ms': round(microseconds_to_ms(sum(durations)), 2),
+                    'avg_ms': round(avg_ms, 2),
+                    'p50_ms': round(p50_ms, 2),
+                    'p95_ms': round(p95_ms, 2),
+                    'min_ms': round(microseconds_to_ms(min(durations)), 2) if durations else 0,
+                    'max_ms': round(microseconds_to_ms(max(durations)), 2) if durations else 0
+                }
+            
+            # Token streaming
+            streaming_spans = [s for s in inference_spans if 'stream_tokens' in s.get('operationName', '')]
+            if streaming_spans:
+                chunk_counts = []
+                for span in streaming_spans:
+                    chunk_count = get_tag_value(span.get('tags', []), 'chunk_count')
+                    if chunk_count:
+                        try:
+                            chunk_counts.append(int(chunk_count))
+                        except ValueError:
+                            pass
+                
+                if chunk_counts:
+                    results['llm_analysis']['token_streaming'] = {
+                        'streaming_operations': len(streaming_spans),
+                        'total_chunks': sum(chunk_counts),
+                        'avg_chunks_per_stream': round(statistics.mean(chunk_counts), 1),
+                        'min_chunks': min(chunk_counts),
+                        'max_chunks': max(chunk_counts)
+                    }
+        
+        return results
+
+
+    # =============================================================================
+    # KUBERNETES INTERACTION
+    # =============================================================================
+
+    def get_otel_collector_pod(namespace: str = DEFAULT_NAMESPACE) -> str:
+        cmd = f"oc get pods -n {namespace} -l {OTEL_COLLECTOR_LABEL} -o jsonpath='{{.items[0].metadata.name}}'"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get OTEL collector pod: {result.stderr}")
+        return result.stdout.strip().strip("'")
+
+
+    def get_otel_logs(pod_name: str, namespace: str = DEFAULT_NAMESPACE, since_seconds: int = None) -> str:
+        cmd = f"oc logs {pod_name} -n {namespace}"
+        if since_seconds:
+            cmd += f" --since={since_seconds}s"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get OTEL logs: {result.stderr}")
+        return result.stdout
+
+
+    def get_locust_times_from_logs(namespace: str = DEFAULT_NAMESPACE) -> tuple:
+        """Parse Locust logs to find the actual test start AND end times."""
+        cmd = f"oc get pod -l job-name=locust-complete-test -n {namespace} -o jsonpath='{{.items[0].metadata.name}}'"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0 or not result.stdout.strip():
+            print("  WARNING: Could not find Locust job pod")
+            return None, None
+        
+        pod_name = result.stdout.strip().strip("'")
+        
+        cmd = f"oc logs {pod_name} -c locust-test -n {namespace}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  WARNING: Could not get Locust logs: {result.stderr}")
+            return None, None
+        
+        start_time = None
+        end_time = None
+        
+        start_pattern = r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\].*Run time limit set'
+        end_pattern = r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\].*--run-time limit reached'
+        
+        for line in result.stdout.split('\n'):
+            match = re.search(start_pattern, line)
+            if match:
+                timestamp_str = match.group(1).replace(',', '.')
+                try:
+                    dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                    start_time = dt.replace(tzinfo=timezone.utc)
+                except ValueError as e:
+                    print(f"  WARNING: Could not parse Locust start timestamp: {e}")
+            
+            match = re.search(end_pattern, line)
+            if match:
+                timestamp_str = match.group(1).replace(',', '.')
+                try:
+                    dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                    end_time = dt.replace(tzinfo=timezone.utc)
+                except ValueError as e:
+                    print(f"  WARNING: Could not parse Locust end timestamp: {e}")
+        
+        if not start_time:
+            print("  WARNING: Could not find 'Run time limit set' in Locust logs")
+        if not end_time:
+            print("  WARNING: Could not find '--run-time limit reached' in Locust logs")
+        
+        return start_time, end_time
+
+
+    # =============================================================================
+    # MAIN
+    # =============================================================================
+
+    def main():
+        import argparse
+        
+        parser = argparse.ArgumentParser(description='LlamaStack Trace Collector')
+        parser.add_argument('--run-time', type=int, default=int(os.environ.get('TEST_RUN_TIME', 60)))
+        parser.add_argument('--users', type=int, default=int(os.environ.get('TEST_USERS', 128)))
+        parser.add_argument('--spawn-rate', type=int, default=int(os.environ.get('TEST_SPAWN_RATE', 128)))
+        parser.add_argument('--namespace', type=str, default=DEFAULT_NAMESPACE)
+        parser.add_argument('--output-dir', type=str, default=os.environ.get('OUTPUT_DIR', '/output'))
+        parser.add_argument('--wait-after-test', type=int, default=30)
+        
+        args = parser.parse_args()
+        
+        print("=" * 70)
+        print("LLAMASTACK TRACE COLLECTOR")
+        print("=" * 70)
+        print(f"Run time: {args.run_time}s | Users: {args.users} | Spawn rate: {args.spawn_rate}")
+        print(f"Namespace: {args.namespace} | Output: {args.output_dir}")
+        
+        # Wait for traces to complete
+        if args.wait_after_test > 0:
+            print(f"\nWaiting {args.wait_after_test}s for remaining traces...")
+            time.sleep(args.wait_after_test)
+        
+        # Get OTEL logs
+        print("\nCollecting OTEL logs...")
+        pod_name = get_otel_collector_pod(args.namespace)
+        print(f"OTEL collector pod: {pod_name}")
+        since_seconds = args.run_time + args.wait_after_test + 60
+        log_content = get_otel_logs(pod_name, args.namespace, since_seconds)
+        print(f"Log content size: {len(log_content)} bytes")
+        
+        # Parse logs
+        print("\nParsing OTEL logs...")
+        all_spans = parse_otel_logs(log_content)
+        print(f"Total spans parsed: {len(all_spans)}")
+        
+        traces = group_spans_by_trace(all_spans)
+        print(f"Total traces: {len(traces)}")
+        
+        # Filter excluded endpoints
+        print("\nFiltering excluded endpoints...")
+        traces = filter_excluded_traces(traces)
+        print(f"Traces after filtering: {len(traces)}")
+        
+        # Determine test time window from Locust logs
+        print(f"\nDetermining test time window from Locust logs...")
+        
+        locust_start_time, locust_end_time = get_locust_times_from_logs(args.namespace)
+        
+        # Also get trace timing info
+        response_root_spans = []
+        for trace_id, spans in traces.items():
+            for span in spans:
+                if span.get('operationName') == '/v1/responses' and span.get('startTime'):
+                    response_root_spans.append(span)
+        
+        if response_root_spans:
+            response_root_spans.sort(key=lambda s: s.get('startTime', 0))
+            earliest_trace_us = response_root_spans[0]['startTime']
+            first_trace_time = datetime.fromtimestamp(earliest_trace_us / 1_000_000, tz=timezone.utc)
+            latest_end_us = max(s.get('endTime', s.get('startTime', 0)) for s in response_root_spans)
+            actual_duration_s = (latest_end_us - earliest_trace_us) / 1_000_000
+        else:
+            first_trace_time = None
+            actual_duration_s = 0
+        
+        # Use Locust times if available
+        if locust_start_time and locust_end_time:
+            test_start_time = locust_start_time
+            test_end_time = locust_end_time
+            actual_locust_duration = (locust_end_time - locust_start_time).total_seconds()
+            print(f"  Locust start: {test_start_time.isoformat()}")
+            print(f"  Locust end:   {test_end_time.isoformat()}")
+            print(f"  Locust ran for: {actual_locust_duration:.3f}s (configured: {args.run_time}s)")
+            if first_trace_time:
+                offset = (first_trace_time - locust_start_time).total_seconds()
+                print(f"  First trace arrived: {offset:.3f}s after Locust start")
+        elif first_trace_time:
+            test_start_time = first_trace_time
+            test_end_time = first_trace_time + timedelta(seconds=args.run_time)
+            print(f"  WARNING: Using first trace time (fallback): {test_start_time.isoformat()}")
+        else:
+            print("  WARNING: No timing info found, using fallback")
+            test_end_time = datetime.now(timezone.utc) - timedelta(seconds=args.wait_after_test)
+            test_start_time = test_end_time - timedelta(seconds=args.run_time)
+        
+        if response_root_spans:
+            print(f"  Total /v1/responses in logs: {len(response_root_spans)}")
+        
+        # Filter by time (completed before Locust shutdown)
+        print(f"\nFiltering traces (completed before Locust shutdown)...")
+        traces = filter_traces_by_time(traces, test_end_time)
+        print(f"Traces within window: {len(traces)}")
+        
+        # Generate reports
+        print("\nGenerating reports...")
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = test_start_time.strftime('%Y%m%d_%H%M%S')
+        
+        jaeger_data = generate_jaeger_format(traces)
+        traces_file = output_dir / f'traces_{timestamp}.json'
+        with open(traces_file, 'w') as f:
+            json.dump(jaeger_data, f, indent=2)
+        print(f"  Traces: {traces_file}")
+        
+        analysis = generate_analysis_report(traces)
+        analysis_file = output_dir / f'traces_{timestamp}_analysis.json'
+        with open(analysis_file, 'w') as f:
+            json.dump(analysis, f, indent=2)
+        print(f"  Analysis: {analysis_file}")
+        
+        # Summary
+        print("\n" + "=" * 70)
+        print("SUMMARY")
+        print("=" * 70)
+        print(f"Total traces: {analysis['summary']['total_traces']}")
+        print(f"Total spans: {analysis['summary']['total_spans']}")
+        
+        print("\nTop Operations:")
+        print(f"{'Operation':<60} {'Count':>8} {'Avg (ms)':>10} {'P95 (ms)':>10}")
+        print("-" * 90)
+        
+        sorted_ops = sorted(analysis['operation_stats'].items(), 
+                            key=lambda x: x[1]['total_ms'], reverse=True)[:8]
+        for op_name, stats in sorted_ops:
+            display_name = op_name[:58] + '..' if len(op_name) > 60 else op_name
+            print(f"{display_name:<60} {stats['count']:>8} {stats['avg_ms']:>10.2f} {stats['p95_ms']:>10.2f}")
+        
+        print("\n" + "=" * 70)
+        print("TRACE COLLECTION COMPLETE")
+        print("=" * 70)
+
+
+    if __name__ == '__main__':
+        main()

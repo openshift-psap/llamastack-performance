@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: locust-mcp-deepwiki-test-files
+  # namespace: will be substituted by run_full_test.sh
+data:
+  locustfile.py: |
+    from locust import task, events
+    from locust.contrib.oai import OpenAIUser
+    import csv
+    import os
+
+    # MCP metrics CSV file
+    output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "/tmp")
+    mcp_csv_file = f"{output_dir}/mcp_metrics.csv"
+    mcp_csv_initialized = False
+
+    @events.request.add_listener
+    def on_request(request_type, name, response_time, response_length, exception, context, **kwargs):
+        """Write MCP metrics to CSV immediately"""
+        global mcp_csv_initialized
+        
+        if context and "mcp_call_count" in context:
+            metric = {
+                "timestamp": kwargs.get("start_time", 0),
+                "response_time": response_time,
+                "mcp_call_count": context.get("mcp_call_count", 0),
+                "mcp_tool_names": ",".join(context.get("mcp_tool_names", [])),
+                "tools_discovered": context.get("tools_discovered", 0),
+                "total_output_items": context.get("total_output_items", 0),
+                "input_tokens": context.get("input_tokens", 0),
+                "output_tokens": context.get("output_tokens", 0),
+                "total_tokens": context.get("total_tokens", 0),
+            }
+            
+            try:
+                # Write header on first request
+                if not mcp_csv_initialized:
+                    with open(mcp_csv_file, "w", newline="") as f:
+                        writer = csv.DictWriter(f, fieldnames=metric.keys())
+                        writer.writeheader()
+                        writer.writerow(metric)
+                    mcp_csv_initialized = True
+                    print(f"[MCP] Created CSV: {mcp_csv_file}")
+                else:
+                    # Append to existing file
+                    with open(mcp_csv_file, "a", newline="") as f:
+                        writer = csv.DictWriter(f, fieldnames=metric.keys())
+                        writer.writerow(metric)
+            except Exception as e:
+                print(f"[MCP] Error writing metric: {e}")
+
+    class ResponsesAPIMCPUser(OpenAIUser):
+        """Test Responses API with MCP tools - DeepWiki"""
+        
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.client.base_url = f"{self.host}/v1"
+        
+        @task
+        def test_responses_with_mcp(self):
+            """Test Responses API with MCP tools - DeepWiki query"""
+            
+            self.client.responses.create(
+                model="vllm-inference/llama-32-3b-instruct",
+                input="I want to learn about openai/openai-python. First, use read_wiki_structure to see the documentation topics. After receiving the structure, use ask_question to ask: What is this library for? Finally, after that response, use ask_question again to ask: How do I install it?",
+                tools=[{
+                    "type": "mcp",
+                    "server_url": "https://mcp.deepwiki.com/mcp",
+                    "server_label": "DeepWiki"
+                }],
+                stream=False,
+            )
+
