@@ -14,8 +14,8 @@ This repository contains tools and configurations for performance testing LlamaS
 ## Repository Structure
 
 ```
-├── benchmarking/          # Chat Completions endpoint testing (LlamaStack vs vLLM)
 ├── agentic/              # Responses API testing (PostgreSQL + MCP + Autoscaling)
+├── benchmarking/         # Chat Completions endpoint testing (LlamaStack vs vLLM)
 └── README.md           
 ```
 

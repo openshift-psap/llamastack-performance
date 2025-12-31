@@ -2,13 +2,13 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: locust-mcp-c128
-  namespace: bench
+  namespace: avis-project
 spec:
   backoffLimit: 0
   template:
     metadata:
       labels:
-        job-name: locust-mcp-c128
+        job-name: locust-mcp
     spec:
       restartPolicy: Never
       containers:
