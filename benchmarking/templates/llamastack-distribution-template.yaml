@@ -1,0 +1,27 @@
+apiVersion: llamastack.io/v1alpha1
+kind: LlamaStackDistribution
+metadata:
+  name: llamastack-distribution-v2-23
+  namespace: llamastack
+spec:
+  replicas: 1
+  server:
+    containerSpec:
+      env:
+        - name: VLLM_URL
+          value: 'http://llama-32-3b-instruct-predictor.bench.svc.cluster.local:80/v1'
+        - name: INFERENCE_MODEL
+          value: llama-32-3b-instruct
+        - name: MILVUS_DB_PATH
+          value: /opt/app-root/src/.llama/distributions/rh/milvus.db
+        - name: VLLM_TLS_VERIFY
+          value: 'false'
+        - name: FMS_ORCHESTRATOR_URL
+          value: 'http://localhost:1234'
+      name: llama-stack
+      port: 8321
+    distribution:
+      image: quay.io/aipcc/llama-stack/cpu-ubi9:rhoai-3.0-1761751927
+    storage:
+      size: 20Gi
+      mountPath: /opt/app-root/src/.llama/distributions/rh

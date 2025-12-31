@@ -1,0 +1,189 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guidellm-vllm-concurrency-$CONCURRENCY
+  namespace: $NAMESPACE_BENCH
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        job-name: guidellm-vllm-concurrency-$CONCURRENCY
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      #securityContext:
+      #  runAsUser: 1000
+      #  fsGroup: 1000
+      initContainers:
+        - name: timestamp-generator
+          image: busybox
+          command: ["sh", "-c"]
+          args:
+            - |
+              TS=$(date +"%Y%m%d-%H%M%S");
+              echo $TS > /shared/timestamp;
+              echo "Generated timestamp: $TS"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+      containers:
+        - name: benchmark
+          image: quay.io/rh-ee-tosokin/guidellm:0.3.1
+          imagePullPolicy: Always
+          env:
+            - name: GUIDELLM__MAX_WORKER_PROCESSES
+              value: "1"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Running vLLM benchmark...";
+              export HF_TOKEN=$(cat /secrets/token);
+              export TRANSFORMERS_OFFLINE=0;
+              export HF_HUB_DISABLE_TELEMETRY=1;
+              export HF_HOME=/cache;
+              export TRANSFORMERS_CACHE=/cache;
+              export HOME=/cache;
+              TS=$(cat /shared/timestamp);
+              OUTPUT_FILE="/output/results-guidellm-vllm-concurrency-$CONCURRENCY-${TS}.json";
+              guidellm benchmark \
+                --output-path $OUTPUT_FILE \
+                --target http://$VLLM_SERVICE_NAME-predictor.$NAMESPACE_BENCH.svc.cluster.local/v1 \
+                --model $VLLM_SERVICE_NAME \
+                --processor meta-llama/Llama-3.2-3B-Instruct \
+                --rate-type concurrent \
+                --rate "$CONCURRENCY" \
+                --max-seconds 300 \
+                --data "prompt_tokens=256,output_tokens=128";
+              echo "vLLM Benchmark complete. Results stored in $OUTPUT_FILE";
+              echo "done" > /shared/benchmark_complete;
+              echo "Signaled nvidia-smi monitor to stop"
+          volumeMounts:
+            - name: results-volume
+              mountPath: /output
+            - name: hf-secret
+              mountPath: /secrets
+              readOnly: true
+            - name: hf-cache
+              mountPath: /cache
+            - name: shared-data
+              mountPath: /shared
+        - name: dcgm-metrics-scraper
+          image: curlimages/curl
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Starting DCGM metric scraping...";
+              TS=$(cat /shared/timestamp);
+              OUTPUT_FILE="/output/results-dcgm-${TS}.txt";
+              while true; do
+                if [ -f /shared/benchmark_complete ]; then
+                  echo "Benchmark completed signal received. Stopping metrics scrape.";
+                  break;
+                fi
+                curl -s http://nvidia-dcgm-exporter.nvidia-gpu-operator.svc.cluster.local:9400/metrics >> $OUTPUT_FILE
+                echo "---" >> $OUTPUT_FILE
+                sleep 1
+              done;
+              echo "Metrics scraping stopped. Data saved to $OUTPUT_FILE";
+          volumeMounts:
+            - name: results-volume
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+        - name: vllm-metrics-scraper
+          image: curlimages/curl
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Starting vLLM metrics scraping...";
+              TS=$(cat /shared/timestamp);
+              OUTPUT_FILE="/output/results-vllm-${TS}.txt";
+              while true; do
+                if [ -f /shared/benchmark_complete ]; then
+                  echo "Benchmark completed signal received. Stopping vLLM metrics scrape.";
+                  break;
+                fi
+                curl -s http://$VLLM_SERVICE_NAME-predictor.$NAMESPACE_BENCH.svc.cluster.local/metrics >> $OUTPUT_FILE
+                echo "---" >> $OUTPUT_FILE
+                sleep 1
+              done;
+              echo "vLLM metrics scraping stopped. Data saved to $OUTPUT_FILE";
+          volumeMounts:
+            - name: results-volume
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+        - name: prometheus-metrics-scraper
+          image: nicolaka/netshoot:latest
+          command: ["/bin/bash"]
+          args:
+            - -c
+            - |
+              echo "Starting Prometheus metrics collection...";
+              TOKEN=$(cat /run/secrets/kubernetes.io/serviceaccount/token);
+              TS=$(cat /shared/timestamp);
+              
+              # Create output files
+              VLLM_CPU_FILE="/output/vllm-cpu-metrics-${TS}.jsonl"
+              VLLM_MEMORY_FILE="/output/vllm-memory-metrics-${TS}.jsonl"
+              
+              echo "Collecting metrics every second during benchmark..."
+              
+              # Collection loop
+              COUNTER=0
+              while true; do
+                if [ -f /output/results-guidellm-vllm-concurrency-* ]; then
+                  echo "Benchmark output file found. Benchmark likely finished. Stopping Prometheus metrics collection.";
+                  break;
+                fi
+                
+                COUNTER=$((COUNTER + 1))
+                TIMESTAMP=$(date -Iseconds)
+                echo "Sample $COUNTER at $TIMESTAMP"
+                
+                # Metric 1: vLLM CPU Usage
+                # Measures CPU usage rate for the vLLM container
+                # Returns CPU cores used (e.g., 0.5 = half a core, 2.0 = 2 cores)
+                # Query: rate(container_cpu_usage_seconds_total{namespace="bench",container="kserve-container"}[5m])
+                VLLM_CPU_VALUE=$(curl -s -k -H "Authorization: Bearer $TOKEN" \
+                  "https://thanos-querier-openshift-monitoring.apps.mini-scale.ibm.rhperfscale.org/api/v1/query?query=rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22$NAMESPACE_BENCH%22%2Ccontainer%3D%22kserve-container%22%7D%5B5m%5D%29" \
+                  | jq -r '.data.result[0].value[1] // "null"' 2>/dev/null || echo "null")
+                echo "{\"timestamp\":\"$TIMESTAMP\",\"value\":$VLLM_CPU_VALUE}" >> $VLLM_CPU_FILE
+                
+                # Metric 2: vLLM Memory Usage
+                # Measures current memory usage for the vLLM container
+                # Returns bytes of memory in use
+                # Query: container_memory_working_set_bytes{namespace="bench",container="kserve-container"}
+                VLLM_MEMORY_VALUE=$(curl -s -k -H "Authorization: Bearer $TOKEN" \
+                  "https://thanos-querier-openshift-monitoring.apps.mini-scale.ibm.rhperfscale.org/api/v1/query?query=container_memory_working_set_bytes%7Bnamespace%3D%22$NAMESPACE_BENCH%22%2Ccontainer%3D%22kserve-container%22%7D" \
+                  | jq -r '.data.result[0].value[1] // "null"' 2>/dev/null || echo "null")
+                echo "{\"timestamp\":\"$TIMESTAMP\",\"value\":$VLLM_MEMORY_VALUE}" >> $VLLM_MEMORY_FILE
+                
+                sleep 1
+              done
+              
+              echo "Prometheus metrics collection stopped. Data saved to /output/"
+              ls -la /output/vllm-* || echo "No Prometheus metrics files found"
+          volumeMounts:
+            - name: results-volume
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+        - name: sidecar
+          image: busybox
+          command: ["sh", "-c", "sleep infinity"]
+          volumeMounts:
+            - name: results-volume
+              mountPath: /output
+      volumes:
+        - name: results-volume
+          emptyDir: {}
+        - name: hf-secret
+          secret:
+            secretName: hf-token-secret
+        - name: hf-cache
+          emptyDir: {}
+        - name: shared-data
+          emptyDir: {} 
