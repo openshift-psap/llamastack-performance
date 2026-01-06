@@ -26,8 +26,7 @@ spec:
   jaegerui:
     enabled: true
     route:
-      enabled: true
-      termination: passthrough
+      enabled: false
   # Query frontend serves Jaeger UI - needs larger message limits for big traces
   queryFrontend:
     extraConfig:

@@ -23,7 +23,10 @@ spec:
     authentication:
     - tenantName: dev
       tenantId: "1610b0c3-c509-4592-a256-a1871353dbfa"
-  # Query frontend - needs larger message limits for big traces
+  jaegerui:
+    enabled: true
+    route:
+      enabled: true               # Creates external route with OAuth proxy
   queryFrontend:
     extraConfig:
       server:

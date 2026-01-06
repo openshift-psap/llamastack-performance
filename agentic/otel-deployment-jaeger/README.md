@@ -96,7 +96,7 @@ spec:
   jaegerui:
     enabled: true       # Enables Jaeger UI for visualization
     route:
-      enabled: true     # Creates OpenShift route for external access
+      enabled: false    # No external route - access via port-forward only (for security)
   storage:
     traces:
       backend: memory   # For testing only. Use S3/GCS for production.
@@ -212,7 +212,7 @@ You should see the patch header comment:
 
 ## Accessing Jaeger UI
 
-### Option 1: Port Forward (Recommended for testing)
+The Jaeger UI route is disabled for security - only users with cluster access can view traces via port-forward.
 
 ```bash
 oc port-forward pod/tempo-tracing-0 16686:16686 -n openshift-tempo-operator
@@ -220,12 +220,7 @@ oc port-forward pod/tempo-tracing-0 16686:16686 -n openshift-tempo-operator
 
 Then open: http://localhost:16686
 
-### Option 2: OpenShift Route
-
-The Tempo deployment creates a route automatically. Get the URL:
-```bash
-oc get route -n openshift-tempo-operator
-```
+**Note:** The port-forward session must remain open while accessing the UI. Press `Ctrl+C` to stop.
 
 ## Troubleshooting
 
