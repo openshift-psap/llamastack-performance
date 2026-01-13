@@ -199,7 +199,9 @@ oc apply -f test-deployment/mcp-deployment/nps-mcp-server-deployment.yaml -n ben
 
 All components are deployed. 
 
-📖 **Next:** See [TESTING.md](TESTING.md) for instructions on running performance tests and monitoring autoscaling
+📖 **Next:** 
+- [Local Testing](locustfiles/README.md) - Run Locust locally with port-forwarding
+- [Cluster Testing](test-job/README.md) - Run Locust as Kubernetes Jobs
 
 ---
 

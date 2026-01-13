@@ -224,7 +224,7 @@ class ResponsesAPISimpleUser(OpenAIUser):
 
 ## Related Documentation
 
-- [Main Testing Guide](../TESTING.md) - Complete testing instructions
 - [Deployment Guide](../README.md) - Setup instructions
+- [Cluster Testing](../test-job/README.md) - Run Locust as Kubernetes Jobs
 - [Locust Fork](https://github.com/tosokin/locust/tree/feature/openai-tool-and-streaming-metrics) - Source code
 
