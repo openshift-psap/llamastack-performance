@@ -1,0 +1,202 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: locust-sdg-docs-mcp-metrics
+  namespace: bench
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        job-name: locust-sdg-docs-mcp-metrics
+    spec:
+      restartPolicy: Never
+      serviceAccountName: hpa-metrics-reader
+      initContainers:
+        - name: timestamp-generator
+          image: busybox
+          command: ["sh", "-c"]
+          args:
+            - |
+              TS=$(date +"%Y%m%d-%H%M%S");
+              echo $TS > /shared/timestamp;
+              echo "Generated timestamp: $TS"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+      containers:
+        - name: locust
+          image: quay.io/rh-ee-tosokin/locust-openai:v1-mcp-metrics
+          command: ["sh", "-c"]
+          args:
+            - |
+              locust -f /tests/locustfile.py \
+                --host http://llamastack-rhoai32-postgres-otel-service.llamastack.svc.cluster.local:8321 \
+                --headless \
+                --users 128 \
+                --spawn-rate 128 \
+                --run-time ${TEST_DURATION} \
+                --csv /output/locust-mcp-results \
+                --only-summary
+              echo "done" > /shared/locust_complete
+              echo "Locust test completed, marker written to /shared/locust_complete"
+          env:
+            - name: TEST_DURATION
+              value: "600s"  # 10 minutes test duration
+            - name: OPENAI_API_KEY
+              value: "dummy-key"
+            - name: LOCUST_OUTPUT_DIR
+              value: "/output"
+          volumeMounts:
+            - name: test-files
+              mountPath: /tests
+            - name: results
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+        - name: hpa-metrics-scraper
+          image: nicolaka/netshoot:latest
+          command: ["/bin/bash"]
+          args:
+            - -c
+            - |
+              echo "Starting HPA metrics collection..."
+              TS=$(cat /shared/timestamp)
+              HPA_FILE="/output/hpa-metrics-${TS}.jsonl"
+              
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              API_SERVER="https://kubernetes.default.svc"
+              POST_TEST_SECONDS=600  # Continue collecting for 10 min after test completes
+              
+              echo "Collecting metrics every 1 second until locust completes + ${POST_TEST_SECONDS}s..."
+              
+              SAMPLE=0
+              LOCUST_DONE=false
+              POST_TEST_COUNT=0
+              
+              while true; do
+                SAMPLE=$((SAMPLE + 1))
+                TIMESTAMP=$(date -Iseconds)
+                
+                # Check if locust completed
+                if [ -f /shared/locust_complete ] && [ "$LOCUST_DONE" = "false" ]; then
+                  echo "Locust completed at sample $SAMPLE, collecting ${POST_TEST_SECONDS}s more..."
+                  LOCUST_DONE=true
+                fi
+                
+                # If locust is done, count post-test samples
+                if [ "$LOCUST_DONE" = "true" ]; then
+                  POST_TEST_COUNT=$((POST_TEST_COUNT + 1))
+                  if [ $POST_TEST_COUNT -ge $POST_TEST_SECONDS ]; then
+                    echo "Post-test collection complete"
+                    break
+                  fi
+                fi
+                
+                # Get pod metrics using curl (no kubectl needed)
+                RAW_METRICS=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+                  "$API_SERVER/apis/metrics.k8s.io/v1beta1/namespaces/llamastack/pods" 2>/dev/null || echo "{}")
+                
+                # Parse with jq
+                METRICS=$(echo "$RAW_METRICS" | jq -c '[.items[]? | select(.metadata.name | startswith("llamastack-rhoai32")) | {
+                  pod: .metadata.name,
+                  memory_ki: (.containers[0].usage.memory | rtrimstr("Ki") | tonumber // 0),
+                  cpu_n: (.containers[0].usage.cpu | rtrimstr("n") | tonumber // 0)
+                }]' 2>/dev/null || echo "[]")
+                
+                POD_COUNT=$(echo "$METRICS" | jq 'length' 2>/dev/null || echo "0")
+                TOTAL_MEMORY_KI=$(echo "$METRICS" | jq '[.[].memory_ki] | add // 0' 2>/dev/null || echo "0")
+                AVG_MEMORY_KI=$(echo "$METRICS" | jq 'if length > 0 then ([.[].memory_ki] | add / length | floor) else 0 end' 2>/dev/null || echo "0")
+                
+                # Get HPA status using curl
+                HPA_RAW=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+                  "$API_SERVER/apis/autoscaling/v2/namespaces/llamastack/horizontalpodautoscalers" 2>/dev/null || echo "{}")
+                HPA_STATUS=$(echo "$HPA_RAW" | jq -c '.items[]? | select(.metadata.name | contains("llamastack")) | {
+                  name: .metadata.name,
+                  currentReplicas: .status.currentReplicas,
+                  desiredReplicas: .status.desiredReplicas,
+                  currentMemoryPct: (.status.currentMetrics[]? | select(.resource.name=="memory") | .resource.current.averageUtilization),
+                  currentCPUPct: (.status.currentMetrics[]? | select(.resource.name=="cpu") | .resource.current.averageUtilization)
+                }' 2>/dev/null || echo "{}")
+                
+                # Mark if this is during test or post-test
+                PHASE="during_test"
+                if [ "$LOCUST_DONE" = "true" ]; then
+                  PHASE="post_test"
+                fi
+                
+                echo "{\"timestamp\":\"$TIMESTAMP\",\"sample\":$SAMPLE,\"phase\":\"$PHASE\",\"pod_count\":$POD_COUNT,\"total_memory_ki\":$TOTAL_MEMORY_KI,\"avg_memory_ki\":$AVG_MEMORY_KI,\"pods\":$METRICS,\"hpa\":$HPA_STATUS}" >> $HPA_FILE
+                
+                # Print every 10th sample to avoid log spam
+                if [ $((SAMPLE % 10)) -eq 0 ]; then
+                  echo "Sample $SAMPLE ($PHASE) at $TIMESTAMP: pods=$POD_COUNT, avg_memory=${AVG_MEMORY_KI}Ki"
+                fi
+                
+                sleep 1
+              done
+              
+              # Count requests per pod from logs
+              echo "Counting requests per pod..."
+              REQUEST_COUNT_FILE="/output/request-counts-${TS}.json"
+              
+              # Get list of LlamaStack pods (label is app=llama-stack)
+              PODS=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+                "$API_SERVER/api/v1/namespaces/llamastack/pods?labelSelector=app=llama-stack" 2>/dev/null | \
+                jq -r '.items[].metadata.name' 2>/dev/null || echo "")
+              
+              echo "{\"timestamp\":\"$(date -Iseconds)\",\"pods\":[" > $REQUEST_COUNT_FILE
+              FIRST=true
+              
+              for POD in $PODS; do
+                # Get pod logs and count POST /v1/responses requests
+                COUNT=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+                  "$API_SERVER/api/v1/namespaces/llamastack/pods/$POD/log" 2>/dev/null | \
+                  grep -c "POST /v1/responses" 2>/dev/null | tr -d '\r\n' || echo "0")
+                COUNT=${COUNT:-0}
+                
+                if [ "$FIRST" = "true" ]; then
+                  FIRST=false
+                else
+                  echo "," >> $REQUEST_COUNT_FILE
+                fi
+                echo "{\"pod\":\"$POD\",\"request_count\":$COUNT}" >> $REQUEST_COUNT_FILE
+                echo "  $POD: $COUNT requests"
+              done
+              
+              echo "]}" >> $REQUEST_COUNT_FILE
+              echo "Request counts saved to $REQUEST_COUNT_FILE"
+              
+              echo "done" > /shared/metrics_complete
+              echo "HPA metrics collection complete. $SAMPLE samples saved to $HPA_FILE"
+          volumeMounts:
+            - name: results
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+        - name: sidecar
+          image: busybox
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Sidecar waiting for test completion..."
+              while [ ! -f /shared/metrics_complete ]; do
+                sleep 5
+              done
+              echo "Test complete. Sidecar keeping pod alive for result retrieval."
+              echo "Run: oc cp bench/<pod-name>:/output/ ./results/ -c sidecar"
+              sleep infinity
+          volumeMounts:
+            - name: results
+              mountPath: /output
+            - name: shared-data
+              mountPath: /shared
+      volumes:
+        - name: test-files
+          configMap:
+            name: locust-sdg-docs-mcp-test-files
+        - name: results
+          emptyDir: {}
+        - name: shared-data
+          emptyDir: {}
+# Note: Requires RBAC from rbac-metrics-reader.yaml (apply once before running this job)
