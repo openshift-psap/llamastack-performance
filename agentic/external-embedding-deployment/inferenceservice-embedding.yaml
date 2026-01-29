@@ -1,0 +1,31 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  annotations:
+    openshift.io/display-name: granite-embedding-125m-english
+    serving.kserve.io/deploymentMode: RawDeployment
+  labels:
+    networking.kserve.io/visibility: exposed
+    opendatahub.io/dashboard: "true"
+  name: granite-embedding
+  namespace: bench
+spec:
+  predictor:
+    automountServiceAccountToken: false
+    maxReplicas: 1
+    minReplicas: 1
+    model:
+      modelFormat:
+        name: vLLM
+      name: ""
+      resources:
+        limits:
+          cpu: "4"
+          memory: 8Gi
+        requests:
+          cpu: "2"
+          memory: 4Gi
+      runtime: granite-embedding
+      # Download directly from HuggingFace (no token needed for open models)
+      storageUri: hf://ibm-granite/granite-embedding-125m-english
+      image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest

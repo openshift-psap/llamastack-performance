@@ -1,0 +1,39 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: granite-embedding
+spec:
+  annotations:
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8080"
+  containers:
+  - args:
+    - --port=8080
+    - --model=/mnt/models
+    - --served-model-name={{.Name}}
+    - --dtype=float16
+    - --max-model-len=512
+    command:
+    - python
+    - -m
+    - vllm.entrypoints.openai.api_server
+    env:
+    - name: HF_HOME
+      value: /tmp/hf_home
+    image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:latest
+    name: kserve-container
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+    volumeMounts:
+    - mountPath: /dev/shm
+      name: shm
+  multiModel: false
+  supportedModelFormats:
+  - autoSelect: true
+    name: vLLM
+  volumes:
+  - emptyDir:
+      medium: Memory
+      sizeLimit: 512Mi
+    name: shm
