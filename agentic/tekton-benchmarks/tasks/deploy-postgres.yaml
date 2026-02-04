@@ -1,0 +1,53 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-postgres
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploy PostgreSQL for LlamaStack.
+    Deletes existing deployment first for a fresh database.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy PostgreSQL
+      type: string
+      default: "llamastack"
+    - name: MANIFEST_PATH
+      description: Path to PostgreSQL manifest (in workspace or URL)
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/test-deployment/postgres-deployment/postgres-complete-deployment.yaml"
+  steps:
+    - name: deploy-postgres
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "=============================================="
+        echo "Deploying PostgreSQL"
+        echo "=============================================="
+        echo "Namespace: $(params.NAMESPACE)"
+        echo ""
+        
+        # Delete existing PostgreSQL if present
+        echo "Cleaning up existing PostgreSQL..."
+        oc delete deployment postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        echo "Waiting for cleanup..."
+        sleep 5
+        
+        # Deploy fresh PostgreSQL
+        echo "Deploying fresh PostgreSQL..."
+        oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
+        
+        # Wait for PostgreSQL to be ready
+        echo "Waiting for PostgreSQL to be ready..."
+        oc wait --for=condition=available deployment/postgres -n $(params.NAMESPACE) --timeout=120s
+        
+        echo ""
+        echo "=============================================="
+        echo "PostgreSQL deployed successfully!"
+        echo "=============================================="

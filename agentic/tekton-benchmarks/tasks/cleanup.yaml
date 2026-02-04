@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: cleanup
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Cleanup all deployed resources after testing.
+    Removes LlamaStack and PostgreSQL.
+  params:
+    - name: NAMESPACE
+      description: Namespace to cleanup
+      type: string
+      default: "llamastack"
+    - name: DISTRIBUTION_NAME
+      description: Name of the LlamaStackDistribution to delete
+      type: string
+      default: "llamastack-rhoai32-postgres-otel"
+    - name: SKIP_CLEANUP
+      description: Set to "true" to skip cleanup (for debugging)
+      type: string
+      default: "false"
+  steps:
+    - name: cleanup
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        if [ "$(params.SKIP_CLEANUP)" = "true" ]; then
+          echo "Skipping cleanup (SKIP_CLEANUP=true)"
+          exit 0
+        fi
+        
+        echo "=============================================="
+        echo "Cleaning up resources"
+        echo "=============================================="
+        echo "Namespace: $(params.NAMESPACE)"
+        echo ""
+        
+        # Delete LlamaStack
+        echo "Deleting LlamaStackDistribution..."
+        oc delete llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        # Delete PostgreSQL
+        echo "Deleting PostgreSQL..."
+        oc delete deployment postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        echo ""
+        echo "=============================================="
+        echo "Cleanup complete!"
+        echo "=============================================="

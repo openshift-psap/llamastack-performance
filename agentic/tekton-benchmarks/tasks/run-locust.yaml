@@ -1,0 +1,150 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: run-locust
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Run Locust load test against LlamaStack.
+    Mounts locustfiles from ConfigMap and executes with specified parameters.
+  params:
+    - name: HOST
+      description: LlamaStack URL to test
+      type: string
+    - name: USERS
+      description: Number of concurrent users
+      type: string
+      default: "10"
+    - name: SPAWN_RATE
+      description: Users to spawn per second
+      type: string
+      default: "1"
+    - name: RUN_TIME_SECONDS
+      description: Test duration in seconds
+      type: string
+      default: "60"
+    - name: MCP_SERVER
+      description: MCP server URL for tool calling
+      type: string
+      default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
+    - name: MODEL
+      description: Model name to use (provider/model format)
+      type: string
+      default: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      description: Test prompt
+      type: string
+      default: "What is Kubernetes?"
+    - name: LOAD_SHAPE
+      description: Load shape (steady, spike, custom)
+      type: string
+      default: "steady"
+    - name: MLFLOW_URL
+      description: MLflow tracking server URL (optional)
+      type: string
+      default: ""
+    - name: MLFLOW_EXPERIMENT
+      description: MLflow experiment name
+      type: string
+      default: "llamastack-benchmarks"
+    - name: LOCUST_IMAGE
+      description: Locust container image
+      type: string
+      default: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
+    - name: ENABLE_MLFLOW
+      description: Enable MLflow logging (true/false)
+      type: string
+      default: "false"
+  steps:
+    - name: setup-and-run
+      image: $(params.LOCUST_IMAGE)
+      env:
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MCP_SERVER
+          value: $(params.MCP_SERVER)
+        - name: MODEL
+          value: $(params.MODEL)
+        - name: PROMPT
+          value: $(params.PROMPT)
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: MLFLOW_URL
+          value: $(params.MLFLOW_URL)
+        - name: MLFLOW_EXPERIMENT
+          value: $(params.MLFLOW_EXPERIMENT)
+        - name: ENABLE_MLFLOW
+          value: $(params.ENABLE_MLFLOW)
+        # AWS credentials from secret (for SageMaker MLflow)
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: AWS_ACCESS_KEY_ID
+              optional: true
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: AWS_SECRET_ACCESS_KEY
+              optional: true
+        - name: MLFLOW_TRACKING_ARN
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: MLFLOW_TRACKING_ARN
+              optional: true
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "=============================================="
+        echo "LlamaStack Locust Performance Test"
+        echo "=============================================="
+        echo "Host: $(params.HOST)"
+        echo "Users: $USERS"
+        echo "Spawn Rate: $SPAWN_RATE"
+        echo "Duration: $RUN_TIME_SECONDS seconds"
+        echo "MCP Server: $MCP_SERVER"
+        echo "Model: $MODEL"
+        echo "Load Shape: $LOAD_SHAPE"
+        echo "MLflow URL: ${MLFLOW_URL:-not set}"
+        echo "=============================================="
+        
+        # Create directory structure from ConfigMap
+        mkdir -p /tmp/locustfiles/shapes /tmp/locustfiles/hooks
+        
+        # Copy files from ConfigMap mount
+        cp /configmap/locustfile_main.py /tmp/locustfiles/
+        cp /configmap/locustfile_users.py /tmp/locustfiles/
+        cp /configmap/shapes_init.py /tmp/locustfiles/shapes/__init__.py
+        cp /configmap/shapes_steady.py /tmp/locustfiles/shapes/steady.py
+        cp /configmap/hooks_init.py /tmp/locustfiles/hooks/__init__.py
+        cp /configmap/hooks_mlflow.py /tmp/locustfiles/hooks/mlflow_hooks.py
+        
+        echo "Locustfiles setup complete:"
+        find /tmp/locustfiles -type f
+        echo ""
+        
+        # Run Locust
+        cd /tmp/locustfiles
+        locust -f locustfile_main.py \
+          --host $(params.HOST) \
+          --headless \
+          --only-summary
+        
+        echo ""
+        echo "=============================================="
+        echo "Test Complete"
+        echo "=============================================="
+      volumeMounts:
+        - name: locustfiles
+          mountPath: /configmap
+  volumes:
+    - name: locustfiles
+      configMap:
+        name: locustfiles

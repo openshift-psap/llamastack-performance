@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-llamastack
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploy LlamaStackDistribution.
+    Waits for the distribution to be ready before completing.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy LlamaStack
+      type: string
+      default: "llamastack"
+    - name: MANIFEST_PATH
+      description: Path to LlamaStackDistribution manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/otel-deployment-jaeger/llamastack-distribution-postgres-otel.yaml"
+    - name: DISTRIBUTION_NAME
+      description: Name of the LlamaStackDistribution
+      type: string
+      default: "llamastack-rhoai32-postgres-otel"
+  steps:
+    - name: deploy-llamastack
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "=============================================="
+        echo "Deploying LlamaStack"
+        echo "=============================================="
+        echo "Namespace: $(params.NAMESPACE)"
+        echo "Distribution: $(params.DISTRIBUTION_NAME)"
+        echo ""
+        
+        # Delete existing LlamaStack if present
+        echo "Cleaning up existing LlamaStack..."
+        oc delete llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        echo "Waiting for cleanup..."
+        sleep 10
+        
+        # Deploy LlamaStack
+        echo "Deploying LlamaStackDistribution..."
+        oc apply -f $(params.MANIFEST_PATH)
+        
+        # Wait for LlamaStack to be ready
+        echo "Waiting for LlamaStack to be ready..."
+        for i in {1..60}; do
+          PHASE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+          echo "  Status: $PHASE"
+          if [ "$PHASE" = "Ready" ]; then
+            echo ""
+            echo "=============================================="
+            echo "LlamaStack deployed successfully!"
+            echo "=============================================="
+            exit 0
+          fi
+          sleep 5
+        done
+        
+        echo "ERROR: LlamaStack did not become ready in time"
+        exit 1

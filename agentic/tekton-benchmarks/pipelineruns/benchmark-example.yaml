@@ -1,0 +1,42 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: llamastack-benchmark-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: llamastack-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  params:
+    # Deployment
+    - name: NAMESPACE
+      value: "llamastack"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-rhoai32-postgres-otel"
+    
+    # Test configuration
+    - name: HOST
+      value: "http://llamastack-rhoai32-postgres-otel-service.llamastack.svc.cluster.local:8321"
+    - name: USERS
+      value: "5"
+    - name: SPAWN_RATE
+      value: "1"
+    - name: RUN_TIME_SECONDS
+      value: "60"
+    - name: MCP_SERVER
+      value: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
+    - name: MODEL
+      value: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      value: "What is Kubernetes?"
+    
+    # MLflow - uses MLFLOW_TRACKING_ARN from mlflow-aws-credentials secret
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "llamastack-tekton-pipeline"
+    
+    # Set to "true" to keep deployment after test (for debugging)
+    - name: SKIP_CLEANUP
+      value: "false"
