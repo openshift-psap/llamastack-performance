@@ -32,6 +32,11 @@ spec:
           echo "Namespace created successfully"
         fi
         
+        # Grant SCC permissions for LlamaStack (requires fsGroup: 1001)
+        echo ""
+        echo "Setting up SCC permissions..."
+        oc adm policy add-scc-to-user anyuid -z default -n $(params.NAMESPACE) 2>/dev/null || echo "SCC already configured or not needed"
+        
         echo ""
         echo "=============================================="
         echo "Namespace setup complete!"

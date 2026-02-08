@@ -9,7 +9,11 @@ kind: ClusterRole
 metadata:
   name: tekton-deployer-role
 rules:
-  # For deploying PostgreSQL
+  # For creating/managing namespaces
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For deploying PostgreSQL, MCP server
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -20,10 +24,22 @@ rules:
   - apiGroups: ["llamastack.io"]
     resources: ["llamastackdistributions"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For deploying vLLM (KServe)
+  - apiGroups: ["serving.kserve.io"]
+    resources: ["inferenceservices", "servingruntimes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # For checking pod status
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  # For managing SCC (required for LlamaStack deployment)
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["anyuid"]
+    verbs: ["use"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "clusterrolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
