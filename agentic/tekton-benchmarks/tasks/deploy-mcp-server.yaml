@@ -1,0 +1,76 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-mcp-server
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploys MCP server for tool calling tests.
+    Currently supports sdg-docs-mcp-server.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy MCP server
+      type: string
+      default: "llamastack"
+    - name: MCP_SERVER_NAME
+      description: Name of the MCP server deployment
+      type: string
+      default: "sdg-docs-mcp-server"
+    - name: MCP_MANIFEST_PATH
+      description: Path to MCP server deployment manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/mcp-server.yaml"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment (assumes MCP server already running)
+      type: string
+      default: "false"
+  results:
+    - name: mcp-server-url
+      description: Internal URL of the deployed MCP server
+  steps:
+    - name: deploy-mcp-server
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        MCP_URL="http://$(params.MCP_SERVER_NAME).$(params.NAMESPACE).svc.cluster.local:8000/sse"
+        
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping MCP server deployment."
+          echo "Assuming MCP server is already running at: $MCP_URL"
+          echo -n "$MCP_URL" > $(results.mcp-server-url.path)
+          exit 0
+        fi
+        
+        echo "=============================================="
+        echo "Deploying MCP Server"
+        echo "=============================================="
+        echo "Namespace: $(params.NAMESPACE)"
+        echo "Server: $(params.MCP_SERVER_NAME)"
+        echo ""
+        
+        # Clean up existing deployment
+        echo "Cleaning up existing MCP server..."
+        oc delete deployment $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        echo "Waiting for cleanup..."
+        sleep 5
+        
+        # Deploy MCP server
+        echo "Deploying MCP server..."
+        oc apply -f $(params.MCP_MANIFEST_PATH) -n $(params.NAMESPACE)
+        
+        # Wait for deployment to be ready
+        echo "Waiting for MCP server to be ready..."
+        oc wait --for=condition=available deployment/$(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --timeout=120s
+        
+        echo ""
+        echo "=============================================="
+        echo "MCP Server deployed successfully!"
+        echo "=============================================="
+        echo "URL: $MCP_URL"
+        
+        # Output URL as result
+        echo -n "$MCP_URL" > $(results.mcp-server-url.path)

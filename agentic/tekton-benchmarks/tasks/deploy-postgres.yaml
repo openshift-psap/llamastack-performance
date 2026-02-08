@@ -13,9 +13,9 @@ spec:
       type: string
       default: "llamastack"
     - name: MANIFEST_PATH
-      description: Path to PostgreSQL manifest (in workspace or URL)
+      description: Path to PostgreSQL manifest
       type: string
-      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/test-deployment/postgres-deployment/postgres-complete-deployment.yaml"
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/postgres.yaml"
   steps:
     - name: deploy-postgres
       image: quay.io/openshift/origin-cli:latest

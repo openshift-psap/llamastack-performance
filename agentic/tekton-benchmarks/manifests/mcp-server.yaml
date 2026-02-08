@@ -1,0 +1,75 @@
+# SDG Docs MCP Server
+# Namespace is NOT hardcoded - use: oc apply -f mcp-server.yaml -n <namespace>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdg-docs-mcp-server
+  labels:
+    app: sdg-docs-mcp-server
+    component: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdg-docs-mcp-server
+  template:
+    metadata:
+      labels:
+        app: sdg-docs-mcp-server
+        component: mcp
+    spec:
+      containers:
+      - name: sdg-docs-mcp-server
+        image: quay.io/rh-ee-ashtarkb/sdg_hub_mcp:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdg-docs-mcp-server
+  labels:
+    app: sdg-docs-mcp-server
+    component: mcp
+spec:
+  selector:
+    app: sdg-docs-mcp-server
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+    name: http
+  type: ClusterIP

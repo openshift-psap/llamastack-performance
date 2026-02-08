@@ -9,34 +9,46 @@ spec:
   taskRunTemplate:
     serviceAccountName: tekton-deployer
   params:
-    # Deployment
+    # Namespace (created if doesn't exist)
     - name: NAMESPACE
-      value: "llamastack"
+      value: "llamastack-bench"
+    # LlamaStack
     - name: DISTRIBUTION_NAME
-      value: "llamastack-rhoai32-postgres-otel"
-    
+      value: "llamastack-benchmark"
+    # vLLM - skip deployment, use existing in bench namespace
+    - name: SKIP_VLLM_DEPLOY
+      value: "true"
+    - name: VLLM_NAMESPACE
+      value: "bench"
+    - name: MODEL_NAME
+      value: "llama-32-3b-instruct"
+    # MCP server - deploy fresh
+    - name: SKIP_MCP_DEPLOY
+      value: "false"
+    - name: MCP_SERVER_NAME
+      value: "sdg-docs-mcp-server"
     # Test configuration
-    - name: HOST
-      value: "http://llamastack-rhoai32-postgres-otel-service.llamastack.svc.cluster.local:8321"
     - name: USERS
       value: "5"
     - name: SPAWN_RATE
       value: "1"
     - name: RUN_TIME_SECONDS
       value: "60"
-    - name: MCP_SERVER
-      value: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
     - name: MODEL
       value: "vllm-inference/llama-32-3b-instruct"
     - name: PROMPT
       value: "What is Kubernetes?"
-    
-    # MLflow - uses MLFLOW_TRACKING_ARN from mlflow-aws-credentials secret
+    # MLflow
     - name: ENABLE_MLFLOW
       value: "true"
     - name: MLFLOW_EXPERIMENT
       value: "llamastack-tekton-pipeline"
-    
-    # Set to "true" to keep deployment after test (for debugging)
+    # Cleanup options
     - name: SKIP_CLEANUP
+      value: "false"
+    - name: CLEANUP_VLLM
+      value: "false"
+    - name: CLEANUP_MCP
+      value: "true"
+    - name: DELETE_NAMESPACE
       value: "false"

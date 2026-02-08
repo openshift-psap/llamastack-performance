@@ -15,11 +15,15 @@ spec:
     - name: MANIFEST_PATH
       description: Path to LlamaStackDistribution manifest
       type: string
-      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/otel-deployment-jaeger/llamastack-distribution-postgres-otel.yaml"
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/llamastack.yaml"
     - name: DISTRIBUTION_NAME
       description: Name of the LlamaStackDistribution
       type: string
-      default: "llamastack-rhoai32-postgres-otel"
+      default: "llamastack-benchmark"
+    - name: VLLM_NAMESPACE
+      description: Namespace where vLLM is running (for cross-namespace reference)
+      type: string
+      default: ""
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
@@ -41,9 +45,17 @@ spec:
         echo "Waiting for cleanup..."
         sleep 10
         
-        # Deploy LlamaStack
-        echo "Deploying LlamaStackDistribution..."
-        oc apply -f $(params.MANIFEST_PATH)
+        # Download and optionally patch manifest for cross-namespace vLLM
+        VLLM_NS="$(params.VLLM_NAMESPACE)"
+        if [ -n "$VLLM_NS" ] && [ "$VLLM_NS" != "$(params.NAMESPACE)" ]; then
+          echo "Patching VLLM_URL for cross-namespace access (vLLM in $VLLM_NS)..."
+          curl -sL $(params.MANIFEST_PATH) | \
+            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://llama-32-3b-instruct-predictor.$VLLM_NS.svc.cluster.local:80/v1|g" | \
+            oc apply -f - -n $(params.NAMESPACE)
+        else
+          echo "Deploying LlamaStackDistribution..."
+          oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
+        fi
         
         # Wait for LlamaStack to be ready
         echo "Waiting for LlamaStack to be ready..."

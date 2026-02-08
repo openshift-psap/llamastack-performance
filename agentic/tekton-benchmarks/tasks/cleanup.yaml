@@ -6,7 +6,7 @@ metadata:
 spec:
   description: |
     Cleanup all deployed resources after testing.
-    Removes LlamaStack and PostgreSQL.
+    Removes vLLM, MCP server, LlamaStack, and PostgreSQL.
   params:
     - name: NAMESPACE
       description: Namespace to cleanup
@@ -15,9 +15,29 @@ spec:
     - name: DISTRIBUTION_NAME
       description: Name of the LlamaStackDistribution to delete
       type: string
-      default: "llamastack-rhoai32-postgres-otel"
+      default: "llamastack-benchmark"
+    - name: MODEL_NAME
+      description: Name of the vLLM InferenceService to delete
+      type: string
+      default: "llama-32-3b-instruct"
+    - name: MCP_SERVER_NAME
+      description: Name of the MCP server deployment to delete
+      type: string
+      default: "sdg-docs-mcp-server"
     - name: SKIP_CLEANUP
       description: Set to "true" to skip cleanup (for debugging)
+      type: string
+      default: "false"
+    - name: CLEANUP_VLLM
+      description: Set to "true" to also cleanup vLLM
+      type: string
+      default: "false"
+    - name: CLEANUP_MCP
+      description: Set to "true" to also cleanup MCP server
+      type: string
+      default: "false"
+    - name: DELETE_NAMESPACE
+      description: Set to "true" to delete the entire namespace
       type: string
       default: "false"
   steps:
@@ -48,6 +68,30 @@ spec:
         oc delete service postgres -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        # Optionally delete MCP server
+        if [ "$(params.CLEANUP_MCP)" = "true" ]; then
+          echo "Deleting MCP server..."
+          oc delete deployment $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+          oc delete service $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        else
+          echo "Skipping MCP server cleanup (CLEANUP_MCP=false)"
+        fi
+        
+        # Optionally delete vLLM
+        if [ "$(params.CLEANUP_VLLM)" = "true" ]; then
+          echo "Deleting vLLM InferenceService..."
+          oc delete inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+          oc delete servingruntime $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        else
+          echo "Skipping vLLM cleanup (CLEANUP_VLLM=false)"
+        fi
+        
+        # Optionally delete entire namespace
+        if [ "$(params.DELETE_NAMESPACE)" = "true" ]; then
+          echo "Deleting namespace $(params.NAMESPACE)..."
+          oc delete namespace $(params.NAMESPACE) --ignore-not-found=true
+        fi
         
         echo ""
         echo "=============================================="

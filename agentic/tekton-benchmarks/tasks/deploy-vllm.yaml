@@ -1,0 +1,92 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-vllm
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploys vLLM model serving (ServingRuntime + InferenceService).
+    Cleans up existing deployment before deploying fresh.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy vLLM
+      type: string
+      default: "llamastack"
+    - name: MODEL_NAME
+      description: Name of the model/InferenceService
+      type: string
+      default: "llama-32-3b-instruct"
+    - name: SERVINGRUNTIME_PATH
+      description: Path to ServingRuntime manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/vllm-servingruntime.yaml"
+    - name: INFERENCESERVICE_PATH
+      description: Path to InferenceService manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/vllm-inferenceservice.yaml"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment (assumes vLLM already running)
+      type: string
+      default: "false"
+  steps:
+    - name: deploy-vllm
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping vLLM deployment."
+          echo "Assuming vLLM is already running."
+          exit 0
+        fi
+        
+        echo "=============================================="
+        echo "Deploying vLLM Model Serving"
+        echo "=============================================="
+        echo "Namespace: $(params.NAMESPACE)"
+        echo "Model: $(params.MODEL_NAME)"
+        echo ""
+        
+        # Clean up existing deployment
+        echo "Cleaning up existing vLLM deployment..."
+        oc delete inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete servingruntime $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        echo "Waiting for cleanup..."
+        sleep 5
+        
+        # Deploy ServingRuntime first (InferenceService depends on it)
+        echo "Deploying ServingRuntime..."
+        oc apply -f $(params.SERVINGRUNTIME_PATH) -n $(params.NAMESPACE)
+        
+        # Deploy InferenceService
+        echo "Deploying InferenceService..."
+        oc apply -f $(params.INFERENCESERVICE_PATH) -n $(params.NAMESPACE)
+        
+        # Wait for InferenceService to be ready
+        echo "Waiting for InferenceService to be ready..."
+        echo "(This may take several minutes for model loading)"
+        
+        timeout=300
+        counter=0
+        while [ $counter -lt $timeout ]; do
+          READY=$(oc get inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+          
+          if [ "$READY" = "True" ]; then
+            echo ""
+            echo "=============================================="
+            echo "vLLM deployed successfully!"
+            echo "=============================================="
+            exit 0
+          fi
+          
+          sleep 5
+          counter=$((counter + 5))
+          echo -n "."
+        done
+        
+        echo ""
+        echo "ERROR: vLLM did not become ready in time (${timeout} seconds)"
+        oc get inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE) -o yaml
+        exit 1

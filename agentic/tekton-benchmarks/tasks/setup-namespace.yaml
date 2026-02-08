@@ -1,0 +1,38 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: setup-namespace
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Creates the target namespace if it doesn't exist.
+    This should run as the first task in the pipeline.
+  params:
+    - name: NAMESPACE
+      description: Namespace to create
+      type: string
+      default: "llamastack"
+  steps:
+    - name: create-namespace
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "=============================================="
+        echo "Setting up namespace: $(params.NAMESPACE)"
+        echo "=============================================="
+        
+        # Check if namespace exists
+        if oc get namespace $(params.NAMESPACE) > /dev/null 2>&1; then
+          echo "Namespace $(params.NAMESPACE) already exists"
+        else
+          echo "Creating namespace $(params.NAMESPACE)..."
+          oc create namespace $(params.NAMESPACE)
+          echo "Namespace created successfully"
+        fi
+        
+        echo ""
+        echo "=============================================="
+        echo "Namespace setup complete!"
+        echo "=============================================="

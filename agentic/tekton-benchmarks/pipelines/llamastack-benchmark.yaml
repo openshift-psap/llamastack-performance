@@ -6,23 +6,42 @@ metadata:
 spec:
   description: |
     End-to-end LlamaStack benchmark pipeline.
-    Deploys PostgreSQL and LlamaStack, runs Locust tests, then cleans up.
+    Deploys vLLM, MCP server, PostgreSQL, and LlamaStack, runs Locust tests, then cleans up.
   params:
-    # Deployment params
+    # Namespace
     - name: NAMESPACE
-      description: Namespace for deployment
+      description: Namespace for deployment (created if doesn't exist)
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: DISTRIBUTION_NAME
       description: LlamaStackDistribution name
       type: string
-      default: "llamastack-rhoai32-postgres-otel"
+      default: "llamastack-benchmark"
+    
+    # vLLM params
+    - name: MODEL_NAME
+      description: vLLM model/InferenceService name
+      type: string
+      default: "llama-32-3b-instruct"
+    - name: SKIP_VLLM_DEPLOY
+      description: Skip vLLM deployment (assumes already running)
+      type: string
+      default: "true"
+    - name: VLLM_NAMESPACE
+      description: Namespace where vLLM is running (if different)
+      type: string
+      default: "bench"
+    # MCP server params
+    - name: MCP_SERVER_NAME
+      description: MCP server deployment name
+      type: string
+      default: "sdg-docs-mcp-server"
+    - name: SKIP_MCP_DEPLOY
+      description: Skip MCP server deployment
+      type: string
+      default: "false"
     
     # Test params
-    - name: HOST
-      description: LlamaStack URL (auto-generated from distribution name)
-      type: string
-      default: "http://llamastack-rhoai32-postgres-otel-service.llamastack.svc.cluster.local:8321"
     - name: USERS
       description: Number of concurrent users
       type: string
@@ -35,10 +54,6 @@ spec:
       description: Test duration
       type: string
       default: "60"
-    - name: MCP_SERVER
-      description: MCP server URL
-      type: string
-      default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
     - name: MODEL
       description: Model name (provider/model format)
       type: string
@@ -67,28 +82,79 @@ spec:
       description: Skip cleanup for debugging
       type: string
       default: "false"
-
+    - name: CLEANUP_VLLM
+      description: Also cleanup vLLM after test
+      type: string
+      default: "false"
+    - name: CLEANUP_MCP
+      description: Also cleanup MCP server after test
+      type: string
+      default: "false"
+    - name: DELETE_NAMESPACE
+      description: Delete entire namespace after test
+      type: string
+      default: "false"
   tasks:
-    # Stage 1: Deploy PostgreSQL
+    # Stage 0: Setup namespace
+    - name: setup-namespace
+      taskRef:
+        name: setup-namespace
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+    # Stage 1: Deploy vLLM (can run in parallel with MCP and PostgreSQL)
+    - name: deploy-vllm
+      runAfter:
+        - setup-namespace
+      taskRef:
+        name: deploy-vllm
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_VLLM_DEPLOY)
+
+    # Stage 1: Deploy MCP server (parallel with vLLM and PostgreSQL)
+    - name: deploy-mcp-server
+      taskRef:
+        name: deploy-mcp-server
+      runAfter:
+        - setup-namespace
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MCP_SERVER_NAME
+          value: $(params.MCP_SERVER_NAME)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_MCP_DEPLOY)
+
+    # Stage 1: Deploy PostgreSQL (parallel with vLLM and MCP)
     - name: deploy-postgres
       taskRef:
         name: deploy-postgres
+      runAfter:
+        - setup-namespace
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
 
-    # Stage 2: Deploy LlamaStack (after PostgreSQL)
+    # Stage 2: Deploy LlamaStack (after all dependencies)
     - name: deploy-llamastack
       taskRef:
         name: deploy-llamastack
       runAfter:
+        - deploy-vllm
+        - deploy-mcp-server
         - deploy-postgres
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
         - name: DISTRIBUTION_NAME
           value: $(params.DISTRIBUTION_NAME)
-
+        - name: VLLM_NAMESPACE
+          value: $(params.VLLM_NAMESPACE)
     # Stage 3: Run Locust test (after LlamaStack)
     - name: run-locust
       taskRef:
@@ -97,7 +163,7 @@ spec:
         - deploy-llamastack
       params:
         - name: HOST
-          value: $(params.HOST)
+          value: "http://$(params.DISTRIBUTION_NAME)-service.$(params.NAMESPACE).svc.cluster.local:8321"
         - name: USERS
           value: $(params.USERS)
         - name: SPAWN_RATE
@@ -105,7 +171,7 @@ spec:
         - name: RUN_TIME_SECONDS
           value: $(params.RUN_TIME_SECONDS)
         - name: MCP_SERVER
-          value: $(params.MCP_SERVER)
+          value: "http://$(params.MCP_SERVER_NAME).$(params.NAMESPACE).svc.cluster.local:8000/sse"
         - name: MODEL
           value: $(params.MODEL)
         - name: PROMPT
@@ -128,5 +194,15 @@ spec:
           value: $(params.NAMESPACE)
         - name: DISTRIBUTION_NAME
           value: $(params.DISTRIBUTION_NAME)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: MCP_SERVER_NAME
+          value: $(params.MCP_SERVER_NAME)
         - name: SKIP_CLEANUP
           value: $(params.SKIP_CLEANUP)
+        - name: CLEANUP_VLLM
+          value: $(params.CLEANUP_VLLM)
+        - name: CLEANUP_MCP
+          value: $(params.CLEANUP_MCP)
+        - name: DELETE_NAMESPACE
+          value: $(params.DELETE_NAMESPACE)
