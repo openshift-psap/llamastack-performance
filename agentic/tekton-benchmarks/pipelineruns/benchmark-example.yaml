@@ -9,20 +9,18 @@ spec:
   taskRunTemplate:
     serviceAccountName: tekton-deployer
   params:
-    # Namespace (created if doesn't exist)
+    # Namespace for vLLM, PostgreSQL, MCP server, LlamaStack (created if doesn't exist)
     - name: NAMESPACE
       value: "llamastack-bench"
     # LlamaStack
     - name: DISTRIBUTION_NAME
       value: "llamastack-benchmark"
-    # vLLM - skip deployment, use existing in bench namespace
+    # vLLM - deploy in same namespace
     - name: SKIP_VLLM_DEPLOY
-      value: "true"
-    - name: VLLM_NAMESPACE
-      value: "bench"
+      value: "false"
     - name: MODEL_NAME
       value: "llama-32-3b-instruct"
-    # MCP server - deploy fresh
+    # MCP server - deploy in same namespace
     - name: SKIP_MCP_DEPLOY
       value: "false"
     - name: MCP_SERVER_NAME
@@ -43,11 +41,11 @@ spec:
       value: "true"
     - name: MLFLOW_EXPERIMENT
       value: "llamastack-tekton-pipeline"
-    # Cleanup options
+    # Cleanup - delete ALL deployed resources after test
     - name: SKIP_CLEANUP
       value: "false"
     - name: CLEANUP_VLLM
-      value: "false"
+      value: "true"
     - name: CLEANUP_MCP
       value: "true"
     - name: DELETE_NAMESPACE

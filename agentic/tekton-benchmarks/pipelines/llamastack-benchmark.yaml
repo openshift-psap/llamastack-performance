@@ -26,11 +26,7 @@ spec:
     - name: SKIP_VLLM_DEPLOY
       description: Skip vLLM deployment (assumes already running)
       type: string
-      default: "true"
-    - name: VLLM_NAMESPACE
-      description: Namespace where vLLM is running (if different)
-      type: string
-      default: "bench"
+      default: "false"
     # MCP server params
     - name: MCP_SERVER_NAME
       description: MCP server deployment name
@@ -154,7 +150,7 @@ spec:
         - name: DISTRIBUTION_NAME
           value: $(params.DISTRIBUTION_NAME)
         - name: VLLM_NAMESPACE
-          value: $(params.VLLM_NAMESPACE)
+          value: $(params.NAMESPACE)
     # Stage 3: Run Locust test (after LlamaStack)
     - name: run-locust
       taskRef:
