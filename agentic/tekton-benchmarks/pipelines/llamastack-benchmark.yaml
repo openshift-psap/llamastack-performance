@@ -8,9 +8,9 @@ spec:
     End-to-end LlamaStack benchmark pipeline.
     Deploys vLLM, MCP server, PostgreSQL, and LlamaStack, runs Locust tests, then cleans up.
   params:
-    # Namespace
+    # Namespace (must already exist)
     - name: NAMESPACE
-      description: Namespace for deployment (created if doesn't exist)
+      description: Namespace for deployment (must already exist)
       type: string
       default: "llamastack-bench"
     - name: DISTRIBUTION_NAME
@@ -91,17 +91,8 @@ spec:
       type: string
       default: "false"
   tasks:
-    # Stage 0: Setup namespace
-    - name: setup-namespace
-      taskRef:
-        name: setup-namespace
-      params:
-        - name: NAMESPACE
-          value: $(params.NAMESPACE)
     # Stage 1: Deploy vLLM (can run in parallel with MCP and PostgreSQL)
     - name: deploy-vllm
-      runAfter:
-        - setup-namespace
       taskRef:
         name: deploy-vllm
       params:
@@ -116,8 +107,6 @@ spec:
     - name: deploy-mcp-server
       taskRef:
         name: deploy-mcp-server
-      runAfter:
-        - setup-namespace
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
@@ -130,8 +119,6 @@ spec:
     - name: deploy-postgres
       taskRef:
         name: deploy-postgres
-      runAfter:
-        - setup-namespace
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
