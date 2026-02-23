@@ -16,12 +16,21 @@ spec:
       description: Path to PostgreSQL manifest
       type: string
       default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/postgres.yaml"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment
+      type: string
+      default: "false"
   steps:
     - name: deploy-postgres
       image: quay.io/openshift/origin-cli:latest
       script: |
         #!/bin/bash
         set -e
+        
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping PostgreSQL deployment."
+          exit 0
+        fi
         
         echo "=============================================="
         echo "Deploying PostgreSQL"

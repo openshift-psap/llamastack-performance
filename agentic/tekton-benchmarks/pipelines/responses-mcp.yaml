@@ -1,42 +1,29 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: llamastack-benchmark
+  name: responses-mcp-benchmark
   namespace: tekton-llamastack
 spec:
   description: |
-    End-to-end LlamaStack benchmark pipeline.
-    Deploys vLLM, MCP server, PostgreSQL, and LlamaStack, runs Locust tests, then cleans up.
+    Benchmark LlamaStack Responses API with MCP tool calling.
+    Deploys vLLM, PostgreSQL, MCP server, LlamaStack, runs Locust test, then cleans up.
   params:
-    # Namespace (must already exist)
     - name: NAMESPACE
-      description: Namespace for deployment (must already exist)
+      description: Namespace for deployment
       type: string
       default: "llamastack-bench"
     - name: DISTRIBUTION_NAME
       description: LlamaStackDistribution name
       type: string
       default: "llamastack-benchmark"
-    
-    # vLLM params
     - name: MODEL_NAME
       description: vLLM model/InferenceService name
       type: string
       default: "llama-32-3b-instruct"
-    - name: SKIP_VLLM_DEPLOY
-      description: Skip vLLM deployment (assumes already running)
-      type: string
-      default: "false"
-    # MCP server params
     - name: MCP_SERVER_NAME
       description: MCP server deployment name
       type: string
       default: "sdg-docs-mcp-server"
-    - name: SKIP_MCP_DEPLOY
-      description: Skip MCP server deployment
-      type: string
-      default: "false"
-    
     # Test params
     - name: USERS
       description: Number of concurrent users
@@ -70,7 +57,6 @@ spec:
       description: "Additional env vars for shapes (KEY=VALUE per line)"
       type: string
       default: ""
-    
     # MLflow params
     - name: ENABLE_MLFLOW
       description: Enable MLflow logging (true/false)
@@ -84,26 +70,13 @@ spec:
       description: MLflow experiment name
       type: string
       default: "llamastack-benchmarks"
-    
-    # Control params
+    # Control
     - name: SKIP_CLEANUP
       description: Skip cleanup for debugging
       type: string
       default: "false"
-    - name: CLEANUP_VLLM
-      description: Also cleanup vLLM after test
-      type: string
-      default: "false"
-    - name: CLEANUP_MCP
-      description: Also cleanup MCP server after test
-      type: string
-      default: "false"
-    - name: DELETE_NAMESPACE
-      description: Delete entire namespace after test
-      type: string
-      default: "false"
   tasks:
-    # Stage 1: Deploy vLLM (can run in parallel with MCP and PostgreSQL)
+    # Stage 1: Deploy vLLM, PostgreSQL, MCP server in parallel
     - name: deploy-vllm
       taskRef:
         name: deploy-vllm
@@ -112,10 +85,14 @@ spec:
           value: $(params.NAMESPACE)
         - name: MODEL_NAME
           value: $(params.MODEL_NAME)
-        - name: SKIP_DEPLOY
-          value: $(params.SKIP_VLLM_DEPLOY)
 
-    # Stage 1: Deploy MCP server (parallel with vLLM and PostgreSQL)
+    - name: deploy-postgres
+      taskRef:
+        name: deploy-postgres
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+
     - name: deploy-mcp-server
       taskRef:
         name: deploy-mcp-server
@@ -124,25 +101,15 @@ spec:
           value: $(params.NAMESPACE)
         - name: MCP_SERVER_NAME
           value: $(params.MCP_SERVER_NAME)
-        - name: SKIP_DEPLOY
-          value: $(params.SKIP_MCP_DEPLOY)
 
-    # Stage 1: Deploy PostgreSQL (parallel with vLLM and MCP)
-    - name: deploy-postgres
-      taskRef:
-        name: deploy-postgres
-      params:
-        - name: NAMESPACE
-          value: $(params.NAMESPACE)
-
-    # Stage 2: Deploy LlamaStack (after all dependencies)
+    # Stage 2: Deploy LlamaStack after all dependencies
     - name: deploy-llamastack
       taskRef:
         name: deploy-llamastack
       runAfter:
         - deploy-vllm
-        - deploy-mcp-server
         - deploy-postgres
+        - deploy-mcp-server
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
@@ -150,7 +117,8 @@ spec:
           value: $(params.DISTRIBUTION_NAME)
         - name: VLLM_NAMESPACE
           value: $(params.NAMESPACE)
-    # Stage 3: Run Locust test (after LlamaStack)
+
+    # Stage 3: Run Locust test
     - name: run-locust
       taskRef:
         name: run-locust
@@ -159,6 +127,8 @@ spec:
       params:
         - name: HOST
           value: "http://$(params.DISTRIBUTION_NAME)-service.$(params.NAMESPACE).svc.cluster.local:8321"
+        - name: USER_CLASS
+          value: "ResponsesMCPUser"
         - name: USERS
           value: $(params.USERS)
         - name: SPAWN_RATE
@@ -184,7 +154,7 @@ spec:
         - name: MLFLOW_EXPERIMENT
           value: $(params.MLFLOW_EXPERIMENT)
 
-    # Stage 4: Cleanup (after test, always runs)
+    # Stage 4: Cleanup
     - name: cleanup
       taskRef:
         name: cleanup
@@ -202,8 +172,6 @@ spec:
         - name: SKIP_CLEANUP
           value: $(params.SKIP_CLEANUP)
         - name: CLEANUP_VLLM
-          value: $(params.CLEANUP_VLLM)
+          value: "true"
         - name: CLEANUP_MCP
-          value: $(params.CLEANUP_MCP)
-        - name: DELETE_NAMESPACE
-          value: $(params.DELETE_NAMESPACE)
+          value: "true"

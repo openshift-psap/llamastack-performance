@@ -1,6 +1,9 @@
 """
 User classes for LlamaStack performance testing.
 Each user class represents a different type of API consumer.
+
+Selection is done via USER_CLASS env var in locustfile_main.py.
+All classes are abstract by default — only the selected one is activated.
 """
 import os
 import json
@@ -8,21 +11,17 @@ from locust import HttpUser, task, between
 
 
 class ResponsesMCPUser(HttpUser):
-    """
-    User that calls the Responses API with MCP tool calling.
-    This simulates a client using LlamaStack's agentic capabilities.
-    """
+    """Responses API with MCP tool calling — full agentic flow."""
     wait_time = between(1, 3)
+    abstract = True
     
     def on_start(self):
-        """Called when a user starts - setup configuration."""
         self.mcp_server = os.environ.get("MCP_SERVER", "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse")
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
         self.prompt = os.environ.get("PROMPT", "What is Kubernetes?")
         
     @task
     def call_responses_with_mcp(self):
-        """Call Responses API with MCP tool."""
         payload = {
             "model": self.model,
             "input": self.prompt,
@@ -43,7 +42,6 @@ class ResponsesMCPUser(HttpUser):
             if response.status_code == 200:
                 try:
                     data = response.json()
-                    # Check if we got a valid response
                     if "output" in data or "choices" in data:
                         response.success()
                     else:
@@ -55,12 +53,9 @@ class ResponsesMCPUser(HttpUser):
 
 
 class ResponsesSimpleUser(HttpUser):
-    """
-    User that calls the Responses API without tools.
-    Simpler workload for baseline testing.
-    """
+    """Responses API without tools — measures LlamaStack overhead."""
     wait_time = between(1, 3)
-    abstract = True  # Don't use in tests by default
+    abstract = True
     
     def on_start(self):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
@@ -68,7 +63,6 @@ class ResponsesSimpleUser(HttpUser):
         
     @task
     def call_responses_simple(self):
-        """Call Responses API without tools."""
         payload = {
             "model": self.model,
             "input": self.prompt
@@ -81,26 +75,29 @@ class ResponsesSimpleUser(HttpUser):
             catch_response=True
         ) as response:
             if response.status_code == 200:
-                response.success()
+                try:
+                    data = response.json()
+                    if "output" in data or "choices" in data:
+                        response.success()
+                    else:
+                        response.failure(f"Unexpected response format: {list(data.keys())}")
+                except json.JSONDecodeError:
+                    response.failure("Invalid JSON response")
             else:
-                response.failure(f"HTTP {response.status_code}")
+                response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
 
 
 class ChatCompletionsUser(HttpUser):
-    """
-    User that calls the Chat Completions API.
-    For testing LlamaStack's OpenAI-compatible endpoint.
-    """
+    """Chat Completions API — works against both vLLM direct and LlamaStack."""
     wait_time = between(1, 3)
-    abstract = True  # Don't use in tests by default
+    abstract = True
     
     def on_start(self):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
-        self.prompt = os.environ.get("PROMPT", "Hello, how are you?")
+        self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
         
     @task
     def call_chat_completions(self):
-        """Call Chat Completions API."""
         payload = {
             "model": self.model,
             "messages": [
@@ -115,6 +112,13 @@ class ChatCompletionsUser(HttpUser):
             catch_response=True
         ) as response:
             if response.status_code == 200:
-                response.success()
+                try:
+                    data = response.json()
+                    if "choices" in data:
+                        response.success()
+                    else:
+                        response.failure(f"Unexpected response format: {list(data.keys())}")
+                except json.JSONDecodeError:
+                    response.failure("Invalid JSON response")
             else:
-                response.failure(f"HTTP {response.status_code}")
+                response.failure(f"HTTP {response.status_code}: {response.text[:200]}")

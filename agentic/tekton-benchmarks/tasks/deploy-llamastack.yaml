@@ -24,12 +24,21 @@ spec:
       description: Namespace where vLLM is running (for cross-namespace reference)
       type: string
       default: ""
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment
+      type: string
+      default: "false"
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
       script: |
         #!/bin/bash
         set -e
+        
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping LlamaStack deployment."
+          exit 0
+        fi
         
         echo "=============================================="
         echo "Deploying LlamaStack"

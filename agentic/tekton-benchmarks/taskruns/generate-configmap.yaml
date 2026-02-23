@@ -1,0 +1,14 @@
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  generateName: generate-configmap-
+  namespace: tekton-llamastack
+spec:
+  taskRef:
+    name: generate-configmap
+  serviceAccountName: tekton-deployer
+  params:
+    - name: GIT_REPO
+      value: "https://github.com/openshift-psap/llamastack-performance.git"
+    - name: GIT_BRANCH
+      value: "main"

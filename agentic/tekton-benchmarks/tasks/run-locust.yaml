@@ -63,6 +63,10 @@ spec:
       description: "Additional env vars for shapes (KEY=VALUE per line)"
       type: string
       default: ""
+    - name: USER_CLASS
+      description: "User class: ResponsesMCPUser | ResponsesSimpleUser | ChatCompletionsUser"
+      type: string
+      default: "ResponsesMCPUser"
   steps:
     - name: setup-and-run
       image: $(params.LOCUST_IMAGE)
@@ -89,6 +93,8 @@ spec:
           value: $(params.CUSTOM_STAGES)
         - name: ENABLE_MLFLOW
           value: $(params.ENABLE_MLFLOW)
+        - name: USER_CLASS
+          value: $(params.USER_CLASS)
         # AWS credentials from secret (for SageMaker MLflow)
         - name: AWS_ACCESS_KEY_ID
           valueFrom:

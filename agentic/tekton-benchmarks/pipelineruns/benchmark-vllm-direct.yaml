@@ -1,34 +1,28 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: benchmark-mcp-realistic-
+  generateName: benchmark-vllm-direct-
   namespace: tekton-llamastack
 spec:
   pipelineRef:
-    name: responses-mcp-benchmark
+    name: vllm-direct-benchmark
   taskRunTemplate:
     serviceAccountName: tekton-deployer
   params:
     - name: NAMESPACE
       value: "llamastack-bench"
-    - name: DISTRIBUTION_NAME
-      value: "llamastack-benchmark"
     - name: MODEL_NAME
       value: "llama-32-3b-instruct"
-    - name: MCP_SERVER_NAME
-      value: "sdg-docs-mcp-server"
     - name: USERS
-      value: "20"
-    - name: SPAWN_RATE
-      value: "5"
+      value: "100"
     - name: RUN_TIME_SECONDS
-      value: "300"
+      value: "60"
     - name: MODEL
-      value: "vllm-inference/llama-32-3b-instruct"
+      value: "llama-32-3b-instruct"
     - name: PROMPT
-      value: "What is Kubernetes?"
+      value: "What is the capital of France?"
     - name: LOAD_SHAPE
-      value: "realistic"
+      value: "steady"
     - name: ENABLE_MLFLOW
       value: "true"
     - name: MLFLOW_EXPERIMENT

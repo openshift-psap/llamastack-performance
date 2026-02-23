@@ -200,9 +200,11 @@ def _on_test_stop(environment, **kwargs):
             mlflow.log_param("spawn_rate", os.environ.get("SPAWN_RATE", "unknown"))
             mlflow.log_param("run_time_seconds", os.environ.get("RUN_TIME_SECONDS", "unknown"))
             mlflow.log_param("host", environment.host or "unknown")
-            mlflow.log_param("mcp_server", os.environ.get("MCP_SERVER", "unknown"))
+            if os.environ.get("USER_CLASS") == "ResponsesMCPUser":
+                mlflow.log_param("mcp_server", os.environ.get("MCP_SERVER", "unknown"))
             mlflow.log_param("model", os.environ.get("MODEL", "unknown"))
             mlflow.log_param("load_shape", os.environ.get("LOAD_SHAPE", "steady"))
+            mlflow.log_param("user_class", os.environ.get("USER_CLASS", "ResponsesMCPUser"))
             
             # Log EXTRA_ENV params (shape-specific like SPIKE_*, HPA_*, etc.)
             extra_env = os.environ.get("EXTRA_ENV", "")
