@@ -1,0 +1,57 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: benchmark-spike-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: llamastack-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  params:
+    # Deployment
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
+    - name: SKIP_VLLM_DEPLOY
+      value: "false"
+    - name: MODEL_NAME
+      value: "llama-32-3b-instruct"
+    - name: SKIP_MCP_DEPLOY
+      value: "false"
+    - name: MCP_SERVER_NAME
+      value: "sdg-docs-mcp-server"
+    # Test - spike load
+    - name: LOAD_SHAPE
+      value: "spike"
+    - name: USERS
+      value: "10"
+    - name: SPAWN_RATE
+      value: "2"
+    - name: RUN_TIME_SECONDS
+      value: "60"
+    - name: MODEL
+      value: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      value: "What is Kubernetes?"
+    - name: EXTRA_ENV
+      value: |
+        SPIKE_BASELINE_USERS=3
+        SPIKE_PEAK_USERS=15
+        SPIKE_BASELINE_DURATION=15
+        SPIKE_RAMP_DURATION=10
+        SPIKE_HOLD_DURATION=30
+        SPIKE_COOLDOWN_DURATION=15
+    # MLflow
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "llamastack-tekton-pipeline"
+    # Cleanup
+    - name: SKIP_CLEANUP
+      value: "false"
+    - name: CLEANUP_VLLM
+      value: "true"
+    - name: CLEANUP_MCP
+      value: "true"

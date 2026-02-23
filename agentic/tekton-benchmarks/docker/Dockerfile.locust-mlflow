@@ -1,0 +1,12 @@
+# Extend existing Locust image with MLflow support
+FROM quay.io/rh-ee-tosokin/locust-openai:v1-mcp-metrics
+
+USER root
+
+# Install MLflow and SageMaker MLflow SDK
+RUN pip install --no-cache-dir \
+    mlflow \
+    sagemaker-mlflow \
+    boto3
+
+USER 1001

@@ -36,7 +36,7 @@ spec:
       type: string
       default: "What is Kubernetes?"
     - name: LOAD_SHAPE
-      description: Load shape (steady, spike, custom)
+      description: "Load shape: steady | spike | realistic | custom"
       type: string
       default: "steady"
     - name: MLFLOW_URL
@@ -51,10 +51,18 @@ spec:
       description: Locust container image
       type: string
       default: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
+    - name: CUSTOM_STAGES
+      description: JSON array of stages for custom load shape
+      type: string
+      default: "[]"
     - name: ENABLE_MLFLOW
       description: Enable MLflow logging (true/false)
       type: string
       default: "false"
+    - name: EXTRA_ENV
+      description: "Additional env vars for shapes (KEY=VALUE per line)"
+      type: string
+      default: ""
   steps:
     - name: setup-and-run
       image: $(params.LOCUST_IMAGE)
@@ -77,6 +85,8 @@ spec:
           value: $(params.MLFLOW_URL)
         - name: MLFLOW_EXPERIMENT
           value: $(params.MLFLOW_EXPERIMENT)
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
         - name: ENABLE_MLFLOW
           value: $(params.ENABLE_MLFLOW)
         # AWS credentials from secret (for SageMaker MLflow)
@@ -123,12 +133,29 @@ spec:
         cp /configmap/locustfile_users.py /tmp/locustfiles/
         cp /configmap/shapes_init.py /tmp/locustfiles/shapes/__init__.py
         cp /configmap/shapes_steady.py /tmp/locustfiles/shapes/steady.py
+        cp /configmap/shapes_spike.py /tmp/locustfiles/shapes/spike.py
+        cp /configmap/shapes_realistic.py /tmp/locustfiles/shapes/realistic.py
+        cp /configmap/shapes_custom.py /tmp/locustfiles/shapes/custom.py
         cp /configmap/hooks_init.py /tmp/locustfiles/hooks/__init__.py
         cp /configmap/hooks_mlflow.py /tmp/locustfiles/hooks/mlflow_hooks.py
         
         echo "Locustfiles setup complete:"
         find /tmp/locustfiles -type f
         echo ""
+        
+        # Export extra environment variables (shape-specific params)
+        export EXTRA_ENV='$(params.EXTRA_ENV)'
+        EXTRA_ENV_VALUE='$(params.EXTRA_ENV)'
+        if [ -n "$EXTRA_ENV_VALUE" ]; then
+          echo "Extra environment variables:"
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              export "$line"
+              echo "  $line"
+            fi
+          done <<< "$EXTRA_ENV_VALUE"
+          echo ""
+        fi
         
         # Run Locust
         cd /tmp/locustfiles

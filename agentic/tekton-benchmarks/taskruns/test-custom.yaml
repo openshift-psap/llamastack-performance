@@ -1,0 +1,33 @@
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  generateName: locust-custom-test-
+  namespace: tekton-llamastack
+spec:
+  taskRef:
+    name: run-locust
+  params:
+    - name: HOST
+      value: "http://llamastack-benchmark-service.llamastack-bench.svc.cluster.local:8321"
+    - name: USERS
+      value: "10"
+    - name: SPAWN_RATE
+      value: "2"
+    - name: RUN_TIME_SECONDS
+      value: "60"
+    - name: MCP_SERVER
+      value: "http://sdg-docs-mcp-server.llamastack-bench.svc.cluster.local:8000/sse"
+    - name: MODEL
+      value: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      value: "What is Kubernetes?"
+    - name: LOAD_SHAPE
+      value: "custom"
+    - name: EXTRA_ENV
+      value: ""
+    - name: CUSTOM_STAGES
+      value: '[{"duration":30,"users":3,"spawn_rate":1},{"duration":60,"users":8,"spawn_rate":2},{"duration":90,"users":3,"spawn_rate":2}]'
+    - name: LOCUST_IMAGE
+      value: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
+    - name: ENABLE_MLFLOW
+      value: "false"

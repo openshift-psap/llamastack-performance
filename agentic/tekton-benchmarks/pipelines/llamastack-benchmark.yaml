@@ -58,6 +58,18 @@ spec:
       description: Test prompt
       type: string
       default: "What is Kubernetes?"
+    - name: LOAD_SHAPE
+      description: "Load shape: steady | spike | realistic | custom"
+      type: string
+      default: "steady"
+    - name: CUSTOM_STAGES
+      description: JSON array of stages for custom load shape
+      type: string
+      default: "[]"
+    - name: EXTRA_ENV
+      description: "Additional env vars for shapes (KEY=VALUE per line)"
+      type: string
+      default: ""
     
     # MLflow params
     - name: ENABLE_MLFLOW
@@ -159,6 +171,12 @@ spec:
           value: $(params.MODEL)
         - name: PROMPT
           value: $(params.PROMPT)
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
+        - name: EXTRA_ENV
+          value: $(params.EXTRA_ENV)
         - name: ENABLE_MLFLOW
           value: $(params.ENABLE_MLFLOW)
         - name: MLFLOW_URL

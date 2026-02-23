@@ -1,0 +1,49 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: benchmark-realistic-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: llamastack-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  params:
+    # Deployment
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
+    - name: SKIP_VLLM_DEPLOY
+      value: "false"
+    - name: MODEL_NAME
+      value: "llama-32-3b-instruct"
+    - name: SKIP_MCP_DEPLOY
+      value: "false"
+    - name: MCP_SERVER_NAME
+      value: "sdg-docs-mcp-server"
+    # Test - realistic traffic pattern
+    - name: LOAD_SHAPE
+      value: "realistic"
+    - name: USERS
+      value: "20"
+    - name: SPAWN_RATE
+      value: "5"
+    - name: RUN_TIME_SECONDS
+      value: "300"
+    - name: MODEL
+      value: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      value: "What is Kubernetes?"
+    # MLflow
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "llamastack-tekton-pipeline"
+    # Cleanup
+    - name: SKIP_CLEANUP
+      value: "false"
+    - name: CLEANUP_VLLM
+      value: "true"
+    - name: CLEANUP_MCP
+      value: "true"
