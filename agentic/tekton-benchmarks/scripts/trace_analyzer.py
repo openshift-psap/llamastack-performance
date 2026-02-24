@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument("--results-dir", required=True)
     parser.add_argument("--tempo-endpoint", required=True)
     parser.add_argument("--service-name", default="llamastack")
+    parser.add_argument("--namespace", required=True, help="Kubernetes namespace to filter traces")
     parser.add_argument("--search-window-buffer", type=int, default=120)
     parser.add_argument("--max-traces", type=int, default=1000)
     return parser.parse_args()
@@ -48,10 +49,11 @@ def read_test_timestamps(results_dir):
     return start, end
 
 
-def search_traces(endpoint, service, start, end, buffer, limit):
+def search_traces(endpoint, service, namespace, start, end, buffer, limit):
     url = f"{endpoint}/api/search"
-    params = {"tags": f"service.name={service}", "start": start - buffer, "end": end + buffer, "limit": limit}
-    print(f"Searching Tempo: {url} (service={service})")
+    tags = f"service.name={service} k8s.namespace.name={namespace}"
+    params = {"tags": tags, "start": start - buffer, "end": end + buffer, "limit": limit}
+    print(f"Searching Tempo: {url} (service={service}, namespace={namespace})")
     try:
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
@@ -158,8 +160,8 @@ def main():
     print("Waiting 15s for trace pipeline flush...")
     time.sleep(15)
 
-    summaries = search_traces(args.tempo_endpoint, args.service_name, start, end,
-                              args.search_window_buffer, args.max_traces)
+    summaries = search_traces(args.tempo_endpoint, args.service_name, args.namespace,
+                              start, end, args.search_window_buffer, args.max_traces)
     if not summaries:
         print("No traces found")
         (results_dir / "trace_metrics.json").write_text(json.dumps(empty_output, indent=2))
