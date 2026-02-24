@@ -25,30 +25,27 @@ spec:
       type: string
       default: "tekton-llamastack"
   steps:
-    - name: generate
+    - name: clone-repo
+      image: alpine/git:latest
+      script: |
+        #!/bin/sh
+        set -e
+        echo "Cloning $(params.GIT_REPO) (branch: $(params.GIT_BRANCH))..."
+        git clone --depth 1 --branch $(params.GIT_BRANCH) $(params.GIT_REPO) /workspace/repo
+        echo "Source files:"
+        find /workspace/repo/agentic/tekton-benchmarks/locustfiles -name '*.py' -type f
+      volumeMounts:
+        - name: shared
+          mountPath: /workspace
+
+    - name: create-configmap
       image: quay.io/openshift/origin-cli:latest
       script: |
         #!/bin/bash
         set -e
+        cd /workspace/repo/agentic/tekton-benchmarks/locustfiles
 
-        echo "=============================================="
-        echo "Generating locustfiles ConfigMap"
-        echo "=============================================="
-        echo "Repo: $(params.GIT_REPO)"
-        echo "Branch: $(params.GIT_BRANCH)"
-        echo ""
-
-        # Clone repo
-        cd /tmp
-        git clone --depth 1 --branch $(params.GIT_BRANCH) $(params.GIT_REPO) repo
-        cd repo/agentic/tekton-benchmarks/locustfiles
-
-        echo "Source files:"
-        find . -name '*.py' -type f
-        echo ""
-
-        # Generate ConfigMap from Python files
-        # Keys use underscores instead of slashes (ConfigMap key restriction)
+        echo "Generating ConfigMap $(params.CONFIGMAP_NAME)..."
         oc create configmap $(params.CONFIGMAP_NAME) \
           --from-file=locustfile_main.py=locustfile_main.py \
           --from-file=locustfile_users.py=locustfile_users.py \
@@ -62,14 +59,12 @@ spec:
           --dry-run=client -o yaml | \
           oc apply -f - -n $(params.CONFIGMAP_NAMESPACE)
 
-        echo ""
-        echo "=============================================="
-        echo "ConfigMap generated successfully!"
-        echo "=============================================="
-        echo "Name: $(params.CONFIGMAP_NAME)"
-        echo "Namespace: $(params.CONFIGMAP_NAMESPACE)"
-        echo ""
+        echo "ConfigMap $(params.CONFIGMAP_NAME) generated in $(params.CONFIGMAP_NAMESPACE)"
+        oc get configmap $(params.CONFIGMAP_NAME) -n $(params.CONFIGMAP_NAMESPACE)
+      volumeMounts:
+        - name: shared
+          mountPath: /workspace
 
-        # Verify
-        oc get configmap $(params.CONFIGMAP_NAME) -n $(params.CONFIGMAP_NAMESPACE) -o jsonpath='{.data}' | python3 -c "import sys,json; keys=json.load(sys.stdin).keys(); print(f'Keys: {sorted(keys)}')" 2>/dev/null || \
-          oc get configmap $(params.CONFIGMAP_NAME) -n $(params.CONFIGMAP_NAMESPACE)
+  volumes:
+    - name: shared
+      emptyDir: {}

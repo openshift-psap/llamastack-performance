@@ -76,7 +76,11 @@ spec:
       type: string
       default: "false"
   tasks:
-    # Stage 1: Deploy vLLM, PostgreSQL, MCP server in parallel
+    # Stage 1: Deploy vLLM, PostgreSQL, MCP server, and generate ConfigMap in parallel
+    - name: generate-configmap
+      taskRef:
+        name: generate-configmap
+
     - name: deploy-vllm
       taskRef:
         name: deploy-vllm
@@ -124,6 +128,7 @@ spec:
         name: run-locust
       runAfter:
         - deploy-llamastack
+        - generate-configmap
       params:
         - name: HOST
           value: "http://$(params.DISTRIBUTION_NAME)-service.$(params.NAMESPACE).svc.cluster.local:8321"
