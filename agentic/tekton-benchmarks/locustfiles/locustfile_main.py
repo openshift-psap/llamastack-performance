@@ -45,7 +45,7 @@ else:
     locustfile_users.ResponsesMCPUser.abstract = False
 
 # Import hooks - registers event listeners as side effect
-from hooks import mlflow_hooks
+from hooks import metrics_collector
 
 # Import shape based on LOAD_SHAPE env var
 shape_name = os.environ.get("LOAD_SHAPE", "steady")
