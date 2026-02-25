@@ -38,6 +38,8 @@ spec:
           value: "http://otel-collector:4318"
         - name: OTEL_SERVICE_NAME
           value: "llamastack"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "k8s.namespace.name=NAMESPACE_PLACEHOLDER"
         # PostgreSQL - assumes postgres is in the SAME namespace
         - name: POSTGRES_HOST
           value: "postgres"

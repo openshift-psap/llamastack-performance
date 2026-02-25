@@ -60,10 +60,13 @@ spec:
           echo "Patching VLLM_URL for cross-namespace access (vLLM in $VLLM_NS)..."
           curl -sL $(params.MANIFEST_PATH) | \
             sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://llama-32-3b-instruct-predictor.$VLLM_NS.svc.cluster.local:80/v1|g" | \
+            sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
             oc apply -f - -n $(params.NAMESPACE)
         else
           echo "Deploying LlamaStackDistribution..."
-          oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
+          curl -sL $(params.MANIFEST_PATH) | \
+            sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
+            oc apply -f - -n $(params.NAMESPACE)
         fi
         
         # Wait for LlamaStack to be ready

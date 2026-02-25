@@ -69,6 +69,12 @@ spec:
         oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true
         
+        # Delete OTel Collector
+        echo "Deleting OTel Collector..."
+        oc delete deployment otel-collector -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service otel-collector -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete configmap otel-collector-config -n $(params.NAMESPACE) --ignore-not-found=true
+        
         # Optionally delete MCP server
         if [ "$(params.CLEANUP_MCP)" = "true" ]; then
           echo "Deleting MCP server..."

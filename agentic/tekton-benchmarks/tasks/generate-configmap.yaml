@@ -5,8 +5,8 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Generates the locustfiles ConfigMap from Python source files in git.
-    Run this task whenever locustfiles/ code changes.
+    Generates ConfigMaps from Python source files in git.
+    Creates: locustfiles (Locust code) and mlflow-scripts (MLflow logger + trace analyzer).
   params:
     - name: GIT_REPO
       description: Git repository URL
@@ -34,6 +34,7 @@ spec:
         git clone --depth 1 --branch $(params.GIT_BRANCH) $(params.GIT_REPO) /workspace/repo
         echo "Source files:"
         find /workspace/repo/agentic/tekton-benchmarks/locustfiles -name '*.py' -type f
+        find /workspace/repo/agentic/tekton-benchmarks/scripts -name '*.py' -type f
       volumeMounts:
         - name: shared
           mountPath: /workspace
@@ -55,12 +56,24 @@ spec:
           --from-file=shapes_realistic.py=shapes/realistic.py \
           --from-file=shapes_custom.py=shapes/custom.py \
           --from-file=hooks_init.py=hooks/__init__.py \
-          --from-file=hooks_mlflow.py=hooks/mlflow_hooks.py \
+          --from-file=hooks_metrics_collector.py=hooks/metrics_collector.py \
           --dry-run=client -o yaml | \
           oc apply -f - -n $(params.CONFIGMAP_NAMESPACE)
 
-        echo "ConfigMap $(params.CONFIGMAP_NAME) generated in $(params.CONFIGMAP_NAMESPACE)"
-        oc get configmap $(params.CONFIGMAP_NAME) -n $(params.CONFIGMAP_NAMESPACE)
+        echo "ConfigMap $(params.CONFIGMAP_NAME) generated"
+
+        # Generate mlflow-scripts ConfigMap
+        cd /workspace/repo/agentic/tekton-benchmarks/scripts
+
+        echo "Generating ConfigMap mlflow-scripts..."
+        oc create configmap mlflow-scripts \
+          --from-file=trace_analyzer.py=trace_analyzer.py \
+          --from-file=mlflow_logger.py=mlflow_logger.py \
+          --dry-run=client -o yaml | \
+          oc apply -f - -n $(params.CONFIGMAP_NAMESPACE)
+
+        echo "Both ConfigMaps generated in $(params.CONFIGMAP_NAMESPACE)"
+        oc get configmap locustfiles mlflow-scripts -n $(params.CONFIGMAP_NAMESPACE)
       volumeMounts:
         - name: shared
           mountPath: /workspace

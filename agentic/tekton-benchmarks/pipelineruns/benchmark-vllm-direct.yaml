@@ -8,6 +8,14 @@ spec:
     name: vllm-direct-benchmark
   taskRunTemplate:
     serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
   params:
     - name: NAMESPACE
       value: "llamastack-bench"

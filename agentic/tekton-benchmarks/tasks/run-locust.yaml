@@ -5,11 +5,12 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Run Locust load test against LlamaStack.
-    Mounts locustfiles from ConfigMap and executes with specified parameters.
+    Run Locust load test against LlamaStack or vLLM.
+    Mounts locustfiles from ConfigMap, writes all result files to shared workspace.
+    HPA metrics sidecar collects pod/HPA metrics during the test.
   params:
     - name: HOST
-      description: LlamaStack URL to test
+      description: Target URL to test
       type: string
     - name: USERS
       description: Number of concurrent users
@@ -28,7 +29,7 @@ spec:
       type: string
       default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
     - name: MODEL
-      description: Model name to use (provider/model format)
+      description: Model name to use
       type: string
       default: "vllm-inference/llama-32-3b-instruct"
     - name: PROMPT
@@ -39,14 +40,6 @@ spec:
       description: "Load shape: steady | spike | realistic | custom"
       type: string
       default: "steady"
-    - name: MLFLOW_URL
-      description: MLflow tracking server URL (optional)
-      type: string
-      default: ""
-    - name: MLFLOW_EXPERIMENT
-      description: MLflow experiment name
-      type: string
-      default: "llamastack-benchmarks"
     - name: LOCUST_IMAGE
       description: Locust container image
       type: string
@@ -55,10 +48,6 @@ spec:
       description: JSON array of stages for custom load shape
       type: string
       default: "[]"
-    - name: ENABLE_MLFLOW
-      description: Enable MLflow logging (true/false)
-      type: string
-      default: "false"
     - name: EXTRA_ENV
       description: "Additional env vars for shapes (KEY=VALUE per line)"
       type: string
@@ -67,6 +56,21 @@ spec:
       description: "User class: ResponsesMCPUser | ResponsesSimpleUser | ChatCompletionsUser"
       type: string
       default: "ResponsesMCPUser"
+    - name: NAMESPACE
+      description: Namespace where LlamaStack is deployed (for HPA scraper)
+      type: string
+      default: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      description: LlamaStackDistribution name (for HPA scraper pod filter)
+      type: string
+      default: "llamastack-benchmark"
+    - name: HPA_POST_TEST_SECONDS
+      description: Seconds to continue scraping HPA metrics after test ends
+      type: string
+      default: "30"
+  workspaces:
+    - name: results
+      description: Shared workspace for test result files (PVC-backed)
   steps:
     - name: setup-and-run
       image: $(params.LOCUST_IMAGE)
@@ -85,39 +89,18 @@ spec:
           value: $(params.PROMPT)
         - name: LOAD_SHAPE
           value: $(params.LOAD_SHAPE)
-        - name: MLFLOW_URL
-          value: $(params.MLFLOW_URL)
-        - name: MLFLOW_EXPERIMENT
-          value: $(params.MLFLOW_EXPERIMENT)
         - name: CUSTOM_STAGES
           value: $(params.CUSTOM_STAGES)
-        - name: ENABLE_MLFLOW
-          value: $(params.ENABLE_MLFLOW)
         - name: USER_CLASS
           value: $(params.USER_CLASS)
-        # AWS credentials from secret (for SageMaker MLflow)
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: mlflow-aws-credentials
-              key: AWS_ACCESS_KEY_ID
-              optional: true
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: mlflow-aws-credentials
-              key: AWS_SECRET_ACCESS_KEY
-              optional: true
-        - name: MLFLOW_TRACKING_ARN
-          valueFrom:
-            secretKeyRef:
-              name: mlflow-aws-credentials
-              key: MLFLOW_TRACKING_ARN
-              optional: true
+        - name: LOCUST_OUTPUT_DIR
+          value: "$(workspaces.results.path)"
+        - name: HPA_POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
       script: |
         #!/bin/bash
         set -e
-        
+
         echo "=============================================="
         echo "LlamaStack Locust Performance Test"
         echo "=============================================="
@@ -125,15 +108,16 @@ spec:
         echo "Users: $USERS"
         echo "Spawn Rate: $SPAWN_RATE"
         echo "Duration: $RUN_TIME_SECONDS seconds"
+        echo "User Class: $USER_CLASS"
         echo "MCP Server: $MCP_SERVER"
         echo "Model: $MODEL"
         echo "Load Shape: $LOAD_SHAPE"
-        echo "MLflow URL: ${MLFLOW_URL:-not set}"
+        echo "Output Dir: $LOCUST_OUTPUT_DIR"
         echo "=============================================="
-        
+
         # Create directory structure from ConfigMap
         mkdir -p /tmp/locustfiles/shapes /tmp/locustfiles/hooks
-        
+
         # Copy files from ConfigMap mount
         cp /configmap/locustfile_main.py /tmp/locustfiles/
         cp /configmap/locustfile_users.py /tmp/locustfiles/
@@ -143,12 +127,12 @@ spec:
         cp /configmap/shapes_realistic.py /tmp/locustfiles/shapes/realistic.py
         cp /configmap/shapes_custom.py /tmp/locustfiles/shapes/custom.py
         cp /configmap/hooks_init.py /tmp/locustfiles/hooks/__init__.py
-        cp /configmap/hooks_mlflow.py /tmp/locustfiles/hooks/mlflow_hooks.py
-        
+        cp /configmap/hooks_metrics_collector.py /tmp/locustfiles/hooks/metrics_collector.py
+
         echo "Locustfiles setup complete:"
         find /tmp/locustfiles -type f
         echo ""
-        
+
         # Export extra environment variables (shape-specific params)
         export EXTRA_ENV='$(params.EXTRA_ENV)'
         EXTRA_ENV_VALUE='$(params.EXTRA_ENV)'
@@ -162,22 +146,125 @@ spec:
           done <<< "$EXTRA_ENV_VALUE"
           echo ""
         fi
-        
-        # Run Locust
+
+        # Record test start time (for trace analysis window)
+        date +%s > "$LOCUST_OUTPUT_DIR/test_start_epoch"
+
+        # Run Locust with CSV output to shared workspace
         cd /tmp/locustfiles
         locust -f locustfile_main.py \
           --host $(params.HOST) \
           --headless \
-          --only-summary
-        
+          --only-summary \
+          --csv "$LOCUST_OUTPUT_DIR/locust-results"
+
+        # Record test end time
+        date +%s > "$LOCUST_OUTPUT_DIR/test_end_epoch"
+
         echo ""
         echo "=============================================="
-        echo "Test Complete"
+        echo "Test Complete — waiting for HPA metrics"
         echo "=============================================="
+
+        # Signal to HPA sidecar that test is done
+        touch /shared/locust_complete
+
+        # Wait for HPA sidecar to finish post-test collection
+        WAIT_MAX=$((HPA_POST_TEST_SECONDS + 15))
+        WAITED=0
+        while [ $WAITED -lt $WAIT_MAX ]; do
+          if [ -f /shared/hpa_done ]; then
+            echo "HPA collection complete"
+            break
+          fi
+          sleep 2
+          WAITED=$((WAITED + 2))
+        done
+
+        # Copy HPA metrics to workspace
+        if [ -f /shared/hpa-metrics.jsonl ]; then
+          cp /shared/hpa-metrics.jsonl "$LOCUST_OUTPUT_DIR/hpa-metrics.jsonl"
+          echo "HPA metrics copied to workspace"
+        else
+          echo "WARNING: No HPA metrics file found"
+        fi
+
+        echo ""
+        echo "Result files:"
+        ls -la "$LOCUST_OUTPUT_DIR/"
       volumeMounts:
         - name: locustfiles
           mountPath: /configmap
+        - name: shared
+          mountPath: /shared
+  sidecars:
+    - name: hpa-metrics-scraper
+      image: nicolaka/netshoot:latest
+      env:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
+        - name: DISTRIBUTION_NAME
+          value: $(params.DISTRIBUTION_NAME)
+      script: |
+        #!/bin/bash
+        HPA_FILE="/shared/hpa-metrics.jsonl"
+        SIGNAL_FILE="/shared/locust_complete"
+        TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+        API_SERVER="https://kubernetes.default.svc"
+        SAMPLE=0
+        POST_COUNTER=0
+        LOCUST_DONE=false
+        PHASE="during_test"
+
+        while true; do
+          SAMPLE=$((SAMPLE + 1))
+          TIMESTAMP=$(date -Iseconds)
+
+          RAW_METRICS=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+            "$API_SERVER/apis/metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/pods" 2>/dev/null || echo "{}")
+
+          METRICS=$(echo "$RAW_METRICS" | jq -c "[.items[]? | select(.metadata.name | startswith(\"$DISTRIBUTION_NAME\")) | {
+            pod: .metadata.name,
+            memory_ki: (.containers[0].usage.memory | rtrimstr(\"Ki\") | tonumber // 0),
+            cpu_n: (.containers[0].usage.cpu | rtrimstr(\"n\") | tonumber // 0)
+          }]" 2>/dev/null || echo "[]")
+
+          POD_COUNT=$(echo "$METRICS" | jq 'length' 2>/dev/null || echo "0")
+          AVG_MEM=$(echo "$METRICS" | jq 'if length > 0 then ([.[].memory_ki] | add / length | floor) else 0 end' 2>/dev/null || echo "0")
+          AVG_CPU=$(echo "$METRICS" | jq 'if length > 0 then ([.[].cpu_n] | add / length | floor) else 0 end' 2>/dev/null || echo "0")
+
+          HPA_RAW=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+            "$API_SERVER/apis/autoscaling/v2/namespaces/$NAMESPACE/horizontalpodautoscalers" 2>/dev/null || echo "{}")
+          HPA=$(echo "$HPA_RAW" | jq -c ".items[]? | select(.metadata.name | contains(\"llamastack\")) | {
+            currentReplicas: .status.currentReplicas,
+            desiredReplicas: .status.desiredReplicas,
+            currentMemoryPct: (.status.currentMetrics[]? | select(.resource.name==\"memory\") | .resource.current.averageUtilization),
+            currentCPUPct: (.status.currentMetrics[]? | select(.resource.name==\"cpu\") | .resource.current.averageUtilization)
+          }" 2>/dev/null || echo "{}")
+          [ -z "$HPA" ] && HPA="{}"
+
+          if [ -f "$SIGNAL_FILE" ] && [ "$LOCUST_DONE" = "false" ]; then
+            LOCUST_DONE=true
+          fi
+          [ "$LOCUST_DONE" = "true" ] && PHASE="post_test" && POST_COUNTER=$((POST_COUNTER + 1))
+
+          echo "{\"timestamp\":\"$TIMESTAMP\",\"sample\":$SAMPLE,\"phase\":\"$PHASE\",\"pod_count\":$POD_COUNT,\"avg_memory_ki\":$AVG_MEM,\"avg_cpu_n\":$AVG_CPU,\"hpa\":$HPA}" >> "$HPA_FILE"
+
+          if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
+            touch /shared/hpa_done
+            break
+          fi
+
+          sleep 1
+        done
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
   volumes:
     - name: locustfiles
       configMap:
         name: locustfiles
+    - name: shared
+      emptyDir: {}

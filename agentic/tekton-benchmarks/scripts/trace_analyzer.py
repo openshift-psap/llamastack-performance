@@ -51,14 +51,27 @@ def read_test_timestamps(results_dir):
 
 def search_traces(endpoint, service, namespace, start, end, buffer, limit):
     url = f"{endpoint}/api/search"
-    tags = f"service.name={service} k8s.namespace.name={namespace}"
-    params = {"tags": tags, "start": start - buffer, "end": end + buffer, "limit": limit}
-    print(f"Searching Tempo: {url} (service={service}, namespace={namespace})")
+
+    # Use TraceQL to find /v1/responses traces with namespace filter
+    q = f'{{name="/v1/responses" && resource.service.name="{service}" && resource.k8s.namespace.name="{namespace}"}}'
+    params = {"q": q, "start": start - buffer, "end": end + buffer, "limit": limit}
+    print(f"Searching Tempo via TraceQL (service={service}, namespace={namespace})")
     try:
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
         traces = resp.json().get("traces", [])
-        print(f"  Found {len(traces)} traces")
+        if traces:
+            print(f"  Found {len(traces)} traces (namespace-filtered)")
+            return traces
+
+        # Fallback: TraceQL without namespace (tight buffer)
+        print(f"  No traces with namespace, retrying without namespace filter (10s buffer)...")
+        q_fallback = f'{{name="/v1/responses" && resource.service.name="{service}"}}'
+        params_fallback = {"q": q_fallback, "start": start - 10, "end": end + 10, "limit": limit}
+        resp = requests.get(url, params=params_fallback, timeout=30)
+        resp.raise_for_status()
+        traces = resp.json().get("traces", [])
+        print(f"  Found {len(traces)} traces (service-only, tight window)")
         return traces
     except requests.exceptions.ConnectionError:
         print(f"ERROR: Cannot connect to Tempo at {endpoint}")

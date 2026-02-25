@@ -8,6 +8,14 @@ spec:
     name: responses-mcp-benchmark
   taskRunTemplate:
     serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
   params:
     - name: NAMESPACE
       value: "llamastack-bench"
@@ -32,7 +40,7 @@ spec:
     - name: EXTRA_ENV
       value: |
         SPIKE_BASELINE_USERS=3
-        SPIKE_PEAK_USERS=100
+        SPIKE_PEAK_USERS=15
         SPIKE_BASELINE_DURATION=15
         SPIKE_RAMP_DURATION=10
         SPIKE_HOLD_DURATION=30

@@ -6,67 +6,55 @@ metadata:
 spec:
   description: |
     Benchmark vLLM directly (no LlamaStack).
-    Deploys vLLM, runs Locust ChatCompletions test, then cleans up.
+    Deploys vLLM, runs Locust ChatCompletions test, logs to MLflow, cleans up.
   params:
     - name: NAMESPACE
-      description: Namespace for deployment
       type: string
       default: "llamastack-bench"
     - name: MODEL_NAME
-      description: vLLM model/InferenceService name
       type: string
       default: "llama-32-3b-instruct"
-    # Test params
     - name: USERS
-      description: Number of concurrent users
       type: string
       default: "10"
     - name: SPAWN_RATE
-      description: Users per second
       type: string
       default: "1"
     - name: RUN_TIME_SECONDS
-      description: Test duration
       type: string
       default: "60"
     - name: MODEL
-      description: Model name for vLLM (no provider prefix)
       type: string
       default: "llama-32-3b-instruct"
     - name: PROMPT
-      description: Test prompt
       type: string
       default: "What is the capital of France?"
     - name: LOAD_SHAPE
-      description: "Load shape: steady | spike | realistic | custom"
       type: string
       default: "steady"
     - name: CUSTOM_STAGES
-      description: JSON array of stages for custom load shape
       type: string
       default: "[]"
     - name: EXTRA_ENV
-      description: "Additional env vars for shapes (KEY=VALUE per line)"
       type: string
       default: ""
-    # MLflow params
+    - name: HPA_POST_TEST_SECONDS
+      type: string
+      default: "30"
     - name: ENABLE_MLFLOW
-      description: Enable MLflow logging (true/false)
       type: string
       default: "false"
-    - name: MLFLOW_URL
-      description: MLflow tracking server URL (optional)
-      type: string
-      default: ""
     - name: MLFLOW_EXPERIMENT
-      description: MLflow experiment name
       type: string
       default: "llamastack-benchmarks"
-    # Control
+    - name: MLFLOW_RUN_NAME_PREFIX
+      type: string
+      default: "tekton"
     - name: SKIP_CLEANUP
-      description: Skip cleanup for debugging
       type: string
       default: "false"
+  workspaces:
+    - name: results
   tasks:
     - name: generate-configmap
       taskRef:
@@ -87,6 +75,9 @@ spec:
       runAfter:
         - deploy-vllm
         - generate-configmap
+      workspaces:
+        - name: results
+          workspace: results
       params:
         - name: HOST
           value: "http://$(params.MODEL_NAME)-predictor.$(params.NAMESPACE).svc.cluster.local:80"
@@ -108,18 +99,56 @@ spec:
           value: $(params.CUSTOM_STAGES)
         - name: EXTRA_ENV
           value: $(params.EXTRA_ENV)
-        - name: ENABLE_MLFLOW
-          value: $(params.ENABLE_MLFLOW)
-        - name: MLFLOW_URL
-          value: $(params.MLFLOW_URL)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: "none"
+        - name: HPA_POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
+
+    - name: log-mlflow
+      taskRef:
+        name: log-mlflow
+      runAfter:
+        - run-locust
+      when:
+        - input: $(params.ENABLE_MLFLOW)
+          operator: in
+          values: ["true"]
+      workspaces:
+        - name: results
+          workspace: results
+      params:
         - name: MLFLOW_EXPERIMENT
           value: $(params.MLFLOW_EXPERIMENT)
+        - name: MLFLOW_RUN_NAME_PREFIX
+          value: $(params.MLFLOW_RUN_NAME_PREFIX)
+        - name: USER_CLASS
+          value: "ChatCompletionsUser"
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MODEL
+          value: $(params.MODEL)
+        - name: PROMPT
+          value: $(params.PROMPT)
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: EXTRA_ENV
+          value: $(params.EXTRA_ENV)
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
 
     - name: cleanup
       taskRef:
         name: cleanup
       runAfter:
-        - run-locust
+        - log-mlflow
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)

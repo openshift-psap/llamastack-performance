@@ -1,0 +1,142 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: log-mlflow
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Analyze traces from Tempo and log all benchmark results to MLflow.
+    Step 1: Query Tempo for traces, compute derived metrics, write trace_metrics.json.
+    Step 2: Read all result files from workspace and batch-log to SageMaker MLflow.
+    Scripts are mounted from the mlflow-scripts ConfigMap.
+  params:
+    - name: MLFLOW_EXPERIMENT
+      description: MLflow experiment name
+      type: string
+      default: "llamastack-benchmarks"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      description: Prefix for the MLflow run name
+      type: string
+      default: "tekton"
+    - name: TEMPO_ENDPOINT
+      description: Tempo HTTP API endpoint for trace queries
+      type: string
+      default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+    - name: OTEL_SERVICE_NAME
+      description: Service name to filter traces in Tempo
+      type: string
+      default: "llamastack"
+    - name: USERS
+      type: string
+      default: "10"
+    - name: SPAWN_RATE
+      type: string
+      default: "1"
+    - name: RUN_TIME_SECONDS
+      type: string
+      default: "60"
+    - name: MODEL
+      type: string
+      default: "vllm-inference/llama-32-3b-instruct"
+    - name: MCP_SERVER
+      type: string
+      default: ""
+    - name: PROMPT
+      type: string
+      default: ""
+    - name: LOAD_SHAPE
+      type: string
+      default: "steady"
+    - name: USER_CLASS
+      type: string
+      default: "ResponsesMCPUser"
+    - name: NAMESPACE
+      type: string
+      default: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      type: string
+      default: "llamastack-benchmark"
+    - name: EXTRA_ENV
+      description: "Shape-specific params to log (KEY=VALUE per line)"
+      type: string
+      default: ""
+    - name: CUSTOM_STAGES
+      description: "Custom shape stages JSON to log"
+      type: string
+      default: "[]"
+  workspaces:
+    - name: results
+      description: Shared workspace containing test result files from run-locust
+  steps:
+    - name: analyze-traces
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --quiet requests
+        python3 /scripts/trace_analyzer.py \
+          --results-dir "$(workspaces.results.path)" \
+          --tempo-endpoint "$(params.TEMPO_ENDPOINT)" \
+          --service-name "$(params.OTEL_SERVICE_NAME)" \
+          --namespace "$(params.NAMESPACE)"
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+
+    - name: log-to-mlflow
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: AWS_DEFAULT_REGION
+              optional: true
+        - name: MLFLOW_TRACKING_ARN
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-aws-credentials
+              key: MLFLOW_TRACKING_ARN
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --quiet mlflow sagemaker-mlflow boto3
+        python3 /scripts/mlflow_logger.py \
+          --results-dir "$(workspaces.results.path)" \
+          --experiment "$(params.MLFLOW_EXPERIMENT)" \
+          --run-name-prefix "$(params.MLFLOW_RUN_NAME_PREFIX)" \
+          --param users="$(params.USERS)" \
+          --param spawn_rate="$(params.SPAWN_RATE)" \
+          --param run_time_seconds="$(params.RUN_TIME_SECONDS)" \
+          --param model="$(params.MODEL)" \
+          --param mcp_server="$(params.MCP_SERVER)" \
+          --param prompt="$(params.PROMPT)" \
+          --param load_shape="$(params.LOAD_SHAPE)" \
+          --param user_class="$(params.USER_CLASS)" \
+          --param namespace="$(params.NAMESPACE)" \
+          --param distribution_name="$(params.DISTRIBUTION_NAME)" \
+          --param custom_stages='$(params.CUSTOM_STAGES)' \
+          $(echo '$(params.EXTRA_ENV)' | while IFS= read -r line; do
+            if [ -n "$line" ] && echo "$line" | grep -q "="; then
+              KEY=$(echo "$line" | cut -d= -f1 | tr '[:upper:]' '[:lower:]')
+              VALUE=$(echo "$line" | cut -d= -f2-)
+              echo "--param ${KEY}=${VALUE}"
+            fi
+          done)
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+  volumes:
+    - name: scripts
+      configMap:
+        name: mlflow-scripts

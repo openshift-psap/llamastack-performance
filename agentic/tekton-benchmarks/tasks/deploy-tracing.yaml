@@ -1,0 +1,143 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-tracing
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploy OpenTelemetry Collector for trace collection.
+    Creates ConfigMap + Deployment + Service in the target namespace.
+    Receives OTLP traces from LlamaStack and forwards to Tempo.
+    Prerequisite: Tempo must be pre-deployed (cluster-level, requires Tempo Operator).
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy OTel Collector
+      type: string
+      default: "llamastack-bench"
+  steps:
+    - name: deploy-otel-collector
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        NAMESPACE="$(params.NAMESPACE)"
+
+        echo "=============================================="
+        echo "Deploying OTel Collector"
+        echo "=============================================="
+        echo "Namespace: $NAMESPACE"
+
+        # Check Tempo reachability
+        TEMPO_URL="http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+        if curl -sf --connect-timeout 5 "$TEMPO_URL/ready" &>/dev/null || \
+           curl -sf --connect-timeout 5 "$TEMPO_URL/status/version" &>/dev/null; then
+          echo "Tempo is reachable"
+        else
+          echo "WARNING: Tempo not reachable at $TEMPO_URL — traces may not be stored"
+        fi
+
+        # Clean existing
+        oc delete deployment otel-collector -n $NAMESPACE --ignore-not-found=true
+        oc delete service otel-collector -n $NAMESPACE --ignore-not-found=true
+        oc delete configmap otel-collector-config -n $NAMESPACE --ignore-not-found=true
+        sleep 3
+
+        # ConfigMap
+        cat <<'CONFIG_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: otel-collector-config
+          labels:
+            app: otel-collector
+        data:
+          otel-collector-config.yaml: |
+            receivers:
+              otlp:
+                protocols:
+                  http:
+                    endpoint: 0.0.0.0:4318
+            processors:
+              batch:
+                timeout: 5s
+                send_batch_size: 1024
+            exporters:
+              otlp/tempo:
+                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
+                tls:
+                  insecure: true
+              debug:
+                verbosity: basic
+            service:
+              pipelines:
+                traces:
+                  receivers: [otlp]
+                  processors: [batch]
+                  exporters: [otlp/tempo, debug]
+        CONFIG_EOF
+
+        # Deployment
+        cat <<'DEPLOY_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: otel-collector
+          labels:
+            app: otel-collector
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: otel-collector
+          template:
+            metadata:
+              labels:
+                app: otel-collector
+            spec:
+              containers:
+              - name: otel-collector
+                image: otel/opentelemetry-collector:latest
+                args: ["--config=/conf/otel-collector-config.yaml"]
+                ports:
+                - containerPort: 4318
+                  name: otlp-http
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                volumeMounts:
+                - name: config
+                  mountPath: /conf
+              volumes:
+              - name: config
+                configMap:
+                  name: otel-collector-config
+        DEPLOY_EOF
+
+        # Service
+        cat <<'SVC_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: otel-collector
+          labels:
+            app: otel-collector
+        spec:
+          selector:
+            app: otel-collector
+          ports:
+          - name: otlp-http
+            port: 4318
+            targetPort: 4318
+          type: ClusterIP
+        SVC_EOF
+
+        echo "Waiting for OTel Collector..."
+        oc wait --for=condition=available deployment/otel-collector -n $NAMESPACE --timeout=120s
+
+        echo ""
+        echo "OTel Collector ready: otel-collector.$NAMESPACE.svc.cluster.local:4318"
