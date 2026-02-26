@@ -39,3 +39,5 @@ spec:
       value: "true"
     - name: MLFLOW_EXPERIMENT
       value: "llamastack-tekton-pipeline"
+    - name: SKIP_CLEANUP
+      value: "false"
