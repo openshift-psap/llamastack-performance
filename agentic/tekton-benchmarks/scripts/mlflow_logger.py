@@ -266,13 +266,27 @@ def main():
             batch_metrics.append(Metric(key="cpu/hpa_percent", value=h.get("currentCPUPct", 0), timestamp=now_ms, step=step))
             batch_metrics.append(Metric(key="memory/hpa_percent", value=h.get("currentMemoryPct", 0), timestamp=now_ms, step=step))
 
-    # Trace per-request metrics
+    # Trace per-request time-series metrics
+    trace_ts_keys = [
+        ("request_duration_ms", "trace/ts/request_duration_ms"),
+        ("inference_duration_ms", "trace/ts/inference_duration_ms"),
+        ("list_mcp_tools_ms", "trace/ts/list_mcp_tools_ms"),
+        ("invoke_mcp_tool_ms", "trace/ts/invoke_mcp_tool_ms"),
+        ("db_duration_ms", "trace/ts/db_duration_ms"),
+        ("vllm_http_duration_ms", "trace/ts/vllm_http_duration_ms"),
+        ("mcp_http_duration_ms", "trace/ts/mcp_http_duration_ms"),
+        ("overhead_ms", "trace/ts/overhead_ms"),
+        ("overhead_pct", "trace/ts/overhead_pct"),
+        ("input_tokens", "trace/ts/input_tokens"),
+        ("output_tokens", "trace/ts/output_tokens"),
+        ("tool_calls", "trace/ts/tool_calls"),
+    ]
     for r in trace_per_req:
         step = r.get("step", 0)
-        if r.get("request_duration_ms", 0) > 0:
-            batch_metrics.append(Metric(key="trace/request_duration_ms", value=r["request_duration_ms"], timestamp=now_ms, step=step))
-        if r.get("tool_calls", 0) > 0:
-            batch_metrics.append(Metric(key="trace/tool_calls_per_request", value=r["tool_calls"], timestamp=now_ms, step=step))
+        for src_key, metric_key in trace_ts_keys:
+            val = r.get(src_key, 0)
+            if val:
+                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
 
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
 

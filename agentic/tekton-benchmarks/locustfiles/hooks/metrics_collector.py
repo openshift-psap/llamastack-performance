@@ -44,6 +44,10 @@ def _on_test_start(environment, **kwargs):
     if _run_started:
         return
     _run_started = True
+    output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "/tmp")
+    import time
+    with open(os.path.join(output_dir, "test_start_epoch_precise"), "w") as f:
+        f.write(f"{time.time():.6f}")
     _start_timeseries_sampling(environment)
 
 
@@ -92,6 +96,9 @@ def _on_test_stop(environment, **kwargs):
         _sampling_greenlet = None
 
     output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "/tmp")
+    import time
+    with open(os.path.join(output_dir, "test_end_epoch_precise"), "w") as f:
+        f.write(f"{time.time():.6f}")
     stats = environment.runner.stats.total
 
     # Console summary

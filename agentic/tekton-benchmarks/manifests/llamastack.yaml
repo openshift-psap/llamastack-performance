@@ -17,6 +17,8 @@ spec:
     podOverrides:
       serviceAccountName: default
     containerSpec:
+      command:
+        - /opt/app-root/entrypoint.sh
       env:
         # vLLM connection - assumes vLLM is in the SAME namespace
         # If vLLM is in a different namespace (e.g., bench), update this URL
@@ -36,6 +38,8 @@ spec:
         # OpenTelemetry - assumes otel-collector is in the SAME namespace
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
         - name: OTEL_SERVICE_NAME
           value: "llamastack"
         - name: OTEL_RESOURCE_ATTRIBUTES
@@ -63,7 +67,7 @@ spec:
       name: llama-stack
       port: 8321
     distribution:
-      image: quay.io/rhoai/odh-llama-stack-core-rhel9:rhoai-3.3
+      image: quay.io/opendatahub/llama-stack@sha256:175563c0461cc717c5918791cfcda8f5f55580e96445fa302c3dbb4d24805cdb
     storage:
       size: 20Gi
       mountPath: /opt/app-root/src/.llama/distributions/rh
