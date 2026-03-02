@@ -56,6 +56,8 @@ spec:
             receivers:
               otlp:
                 protocols:
+                  grpc:
+                    endpoint: 0.0.0.0:4317
                   http:
                     endpoint: 0.0.0.0:4318
             processors:
@@ -100,6 +102,8 @@ spec:
                 image: otel/opentelemetry-collector:latest
                 args: ["--config=/conf/otel-collector-config.yaml"]
                 ports:
+                - containerPort: 4317
+                  name: otlp-grpc
                 - containerPort: 4318
                   name: otlp-http
                 resources:
@@ -130,6 +134,9 @@ spec:
           selector:
             app: otel-collector
           ports:
+          - name: otlp-grpc
+            port: 4317
+            targetPort: 4317
           - name: otlp-http
             port: 4318
             targetPort: 4318
