@@ -1,9 +1,9 @@
 """
 MLflow Logger — reads all result files and batch-logs to SageMaker MLflow.
 
-Reads Locust CSVs, time-series metrics, summary metrics, MCP metrics,
-HPA metrics, and trace metrics from the shared workspace, then logs
-everything via client.log_batch() for efficiency.
+Reads summary metrics, time-series metrics, HPA metrics, and trace metrics
+from the shared workspace, then logs everything via client.log_batch()
+for efficiency.
 
 Usage:
     python mlflow_logger.py \
@@ -13,7 +13,6 @@ Usage:
       --param users=10 --param model=vllm-inference/llama-32-3b-instruct
 """
 import os
-import csv
 import json
 import logging
 import argparse
@@ -49,34 +48,6 @@ def parse_params(param_list):
     return params
 
 
-def read_locust_stats(d):
-    f = d / "locust-results_stats.csv"
-    if not f.exists():
-        print(f"WARNING: {f} not found")
-        return {}
-    metrics = {}
-    field_map = {
-        "Request Count": "locust/total_requests",
-        "Failure Count": "locust/failure_count",
-        "Average Response Time": "locust/avg_response_time_ms",
-        "Min Response Time": "locust/min_response_time_ms",
-        "Max Response Time": "locust/max_response_time_ms",
-        "Median Response Time": "locust/median_response_time_ms",
-        "Requests/s": "locust/requests_per_sec",
-        "Failures/s": "locust/failures_per_sec",
-    }
-    with open(f, "r") as fh:
-        for row in csv.DictReader(fh):
-            if row.get("Name", "").strip() == "Aggregated":
-                for col, name in field_map.items():
-                    try:
-                        metrics[name] = float(row.get(col, "0"))
-                    except (ValueError, TypeError):
-                        pass
-                break
-    print(f"Parsed {len(metrics)} Locust aggregate metrics")
-    return metrics
-
 
 def read_summary_metrics(d):
     """Read summary_metrics.json written by metrics_collector.py"""
@@ -108,36 +79,6 @@ def read_timeseries_metrics(d):
         print(f"WARNING: Failed to read timeseries metrics: {e}")
         return []
 
-
-def read_mcp_metrics(d):
-    f = d / "mcp_metrics.csv"
-    if not f.exists():
-        print(f"INFO: {f} not found (MCP metrics not captured)")
-        return {}
-    rt, tc, it, ot, tt = [], [], [], [], []
-    with open(f, "r") as fh:
-        for row in csv.DictReader(fh):
-            try:
-                rt.append(float(row.get("response_time", 0)))
-                tc.append(int(row.get("mcp_call_count", 0)))
-                it.append(int(row.get("input_tokens", 0)))
-                ot.append(int(row.get("output_tokens", 0)))
-                tt.append(int(row.get("total_tokens", 0)))
-            except (ValueError, TypeError):
-                pass
-    if not rt:
-        return {}
-    n = len(rt)
-    metrics = {
-        "mcp/avg_response_time_ms": sum(rt) / n,
-        "mcp/avg_tool_calls_per_request": sum(tc) / n,
-        "mcp/total_tool_calls": sum(tc),
-        "mcp/avg_input_tokens": sum(it) / n,
-        "mcp/avg_output_tokens": sum(ot) / n,
-        "mcp/avg_total_tokens": sum(tt) / n,
-    }
-    print(f"Parsed {len(metrics)} MCP aggregate metrics from {n} requests")
-    return metrics
 
 
 def read_hpa_metrics(d):
@@ -197,10 +138,8 @@ def main():
     print(f"Results dir: {results_dir}")
     print(f"Params: {test_params}")
 
-    locust = read_locust_stats(results_dir)
     summary = read_summary_metrics(results_dir)
     timeseries = read_timeseries_metrics(results_dir)
-    mcp = read_mcp_metrics(results_dir)
     hpa = read_hpa_metrics(results_dir)
     trace_agg, trace_per_req = read_trace_metrics(results_dir)
 
@@ -217,7 +156,10 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     model_short = test_params.get("model", "unknown").split("/")[-1]
     users = test_params.get("users", "?")
-    run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
+    if args.run_name_prefix and args.run_name_prefix != "tekton":
+        run_name = args.run_name_prefix
+    else:
+        run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
 
     batch_params = [Param(key=k, value=str(v)) for k, v in test_params.items()]
     batch_tags = [RunTag("pipeline", "tekton"), RunTag("run_source", "tekton-pipeline")]
@@ -225,16 +167,8 @@ def main():
     now_ms = int(time.time() * 1000)
     batch_metrics = []
 
-    # Locust CSV aggregate metrics
-    for name, val in locust.items():
-        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
-
     # Summary metrics from metrics_collector
     for name, val in summary.items():
-        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
-
-    # MCP metrics
-    for name, val in mcp.items():
         batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
 
     # Trace aggregate metrics
@@ -258,7 +192,8 @@ def main():
         step = s.get("sample", 0)
         batch_metrics.append(Metric(key="cluster/pod_count", value=s.get("pod_count", 0), timestamp=now_ms, step=step))
         batch_metrics.append(Metric(key="memory/avg_ki", value=s.get("avg_memory_ki", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="cpu/avg_nanocores", value=s.get("avg_cpu_n", 0), timestamp=now_ms, step=step))
+        avg_cpu_millicores = s.get("avg_cpu_n", 0) / 1_000_000
+        batch_metrics.append(Metric(key="cpu/avg_millicores", value=avg_cpu_millicores, timestamp=now_ms, step=step))
         h = s.get("hpa", {})
         if h:
             batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas", 0), timestamp=now_ms, step=step))
@@ -273,10 +208,7 @@ def main():
         ("list_mcp_tools_ms", "trace/ts/list_mcp_tools_ms"),
         ("invoke_mcp_tool_ms", "trace/ts/invoke_mcp_tool_ms"),
         ("db_duration_ms", "trace/ts/db_duration_ms"),
-        ("vllm_http_duration_ms", "trace/ts/vllm_http_duration_ms"),
         ("mcp_http_duration_ms", "trace/ts/mcp_http_duration_ms"),
-        ("overhead_ms", "trace/ts/overhead_ms"),
-        ("overhead_pct", "trace/ts/overhead_pct"),
         ("input_tokens", "trace/ts/input_tokens"),
         ("output_tokens", "trace/ts/output_tokens"),
         ("tool_calls", "trace/ts/tool_calls"),

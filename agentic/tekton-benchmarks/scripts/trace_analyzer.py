@@ -154,7 +154,6 @@ def analyze_spans(spans):
         "list_mcp_tools_durations_ms": [],
         "invoke_mcp_tool_durations_ms": [],
         "db_durations_ms": [],
-        "vllm_http_durations_ms": [],
         "mcp_http_durations_ms": [],
         "input_tokens": [],
         "output_tokens": [],
@@ -162,8 +161,21 @@ def analyze_spans(spans):
 
     db_names = {"INSERT", "connect", "BEGIN;", "COMMIT;", "ROLLBACK;", ";"}
 
+    # Pass 1: identify DB span IDs to fix double-counting (children nested inside connect)
+    db_span_ids = set()
+    span_info = {}
+    for span in spans:
+        sid = span.get("spanId", "")
+        name = span.get("name", "")
+        span_info[sid] = {"name": name, "parent": span.get("parentSpanId", "")}
+        if name.split(" ")[-1] in db_names or name == "connect" or _get_span_attr(span, "db.system") == "postgresql":
+            db_span_ids.add(sid)
+
+    # Pass 2: classify all spans
     for span in spans:
         name = span.get("name", "")
+        sid = span.get("spanId", "")
+        parent_id = span.get("parentSpanId", "")
         start_ns = int(span.get("startTimeUnixNano", "0"))
         end_ns = int(span.get("endTimeUnixNano", "0"))
         dur_ms = (end_ns - start_ns) / 1_000_000 if start_ns and end_ns else 0
@@ -189,29 +201,13 @@ def analyze_spans(spans):
             if dur_ms > 0:
                 result["invoke_mcp_tool_durations_ms"].append(dur_ms)
 
-        elif name.split(" ")[-1] in db_names or _get_span_attr(span, "db.system") == "postgresql":
-            if dur_ms > 0:
+        elif sid in db_span_ids:
+            # Only count top-level DB spans (skip children nested inside other DB spans)
+            if dur_ms > 0 and parent_id not in db_span_ids:
                 result["db_durations_ms"].append(dur_ms)
-
-        elif "chat/completions" in http_url and dur_ms > 0:
-            result["vllm_http_durations_ms"].append(dur_ms)
 
         elif ("mcp" in http_url or "/sse" in http_url or "/messages/" in http_url) and dur_ms > 0:
             result["mcp_http_durations_ms"].append(dur_ms)
-
-    total = result["request_duration_ms"]
-    if total > 0:
-        child_sum = (
-            sum(result["inference_durations_ms"])
-            + sum(result["list_mcp_tools_durations_ms"])
-            + sum(result["invoke_mcp_tool_durations_ms"])
-            + sum(result["db_durations_ms"])
-        )
-        result["overhead_ms"] = max(0, total - child_sum)
-        result["overhead_pct"] = (result["overhead_ms"] / total) * 100 if total else 0
-    else:
-        result["overhead_ms"] = 0
-        result["overhead_pct"] = 0
 
     return result
 
@@ -230,12 +226,9 @@ def safe_percentile(values, pct):
 def _add_full_stats(metrics, prefix, values):
     if not values:
         return
-    metrics[f"{prefix}/avg_ms"] = statistics.mean(values)
     metrics[f"{prefix}/p50_ms"] = statistics.median(values)
     metrics[f"{prefix}/p95_ms"] = safe_percentile(values, 95)
     metrics[f"{prefix}/p99_ms"] = safe_percentile(values, 99)
-    metrics[f"{prefix}/min_ms"] = min(values)
-    metrics[f"{prefix}/max_ms"] = max(values)
 
 
 def compute_aggregates(per_request):
@@ -249,9 +242,6 @@ def compute_aggregates(per_request):
     list_tools = [sum(r["list_mcp_tools_durations_ms"]) for r in per_request if r["list_mcp_tools_durations_ms"]]
     invoke = [sum(r["invoke_mcp_tool_durations_ms"]) for r in per_request if r["invoke_mcp_tool_durations_ms"]]
     db = [sum(r["db_durations_ms"]) for r in per_request if r["db_durations_ms"]]
-    vllm_http = [sum(r["vllm_http_durations_ms"]) for r in per_request if r["vllm_http_durations_ms"]]
-    overhead = [r["overhead_ms"] for r in per_request if r.get("overhead_ms", 0) > 0]
-    overhead_pct = [r["overhead_pct"] for r in per_request if r.get("overhead_pct", 0) > 0]
     inp_tokens = [sum(r["input_tokens"]) for r in per_request if r["input_tokens"]]
     out_tokens = [sum(r["output_tokens"]) for r in per_request if r["output_tokens"]]
 
@@ -260,12 +250,6 @@ def compute_aggregates(per_request):
     _add_full_stats(metrics, "trace/list_mcp_tools", list_tools)
     _add_full_stats(metrics, "trace/invoke_mcp_tool", invoke)
     _add_full_stats(metrics, "trace/db", db)
-    _add_full_stats(metrics, "trace/vllm_http", vllm_http)
-    _add_full_stats(metrics, "trace/overhead", overhead)
-
-    if overhead_pct:
-        metrics["trace/overhead/avg_pct"] = statistics.mean(overhead_pct)
-        metrics["trace/overhead/p50_pct"] = statistics.median(overhead_pct)
 
     if tools:
         metrics["trace/avg_tool_calls_per_request"] = statistics.mean(tools)
@@ -357,6 +341,20 @@ def main():
 
     print(f"Analyzed {len(per_request)} traces with span data")
 
+    # Diagnostic: print all unique span names across traces to help identify missing/renamed spans
+    all_span_names = set()
+    for rt in raw_traces:
+        detail = rt.get("detail", {})
+        for batch in detail.get("batches", []):
+            for scope_spans in batch.get("scopeSpans", []):
+                for s in scope_spans.get("spans", []):
+                    all_span_names.add(s.get("name", "<unnamed>"))
+    if all_span_names:
+        print(f"\nAll unique span names found across {len(raw_traces)} traces:")
+        for sn in sorted(all_span_names):
+            print(f"  - {sn}")
+        print()
+
     if raw_traces:
         (results_dir / "traces_raw.json").write_text(json.dumps(raw_traces, indent=2))
 
@@ -375,10 +373,7 @@ def main():
             "list_mcp_tools_ms": sum(r["list_mcp_tools_durations_ms"]),
             "invoke_mcp_tool_ms": sum(r["invoke_mcp_tool_durations_ms"]),
             "db_duration_ms": sum(r["db_durations_ms"]),
-            "vllm_http_duration_ms": sum(r["vllm_http_durations_ms"]),
             "mcp_http_duration_ms": sum(r["mcp_http_durations_ms"]),
-            "overhead_ms": r.get("overhead_ms", 0),
-            "overhead_pct": r.get("overhead_pct", 0),
             "input_tokens": sum(r["input_tokens"]),
             "output_tokens": sum(r["output_tokens"]),
         }
