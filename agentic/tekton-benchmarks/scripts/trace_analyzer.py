@@ -154,6 +154,12 @@ def analyze_spans(spans):
         "list_mcp_tools_durations_ms": [],
         "invoke_mcp_tool_durations_ms": [],
         "db_durations_ms": [],
+        "db_connect_durations_ms": [],
+        "db_insert_durations_ms": [],
+        "db_begin_durations_ms": [],
+        "db_commit_durations_ms": [],
+        "db_rollback_durations_ms": [],
+        "db_other_durations_ms": [],
         "mcp_http_durations_ms": [],
         "input_tokens": [],
         "output_tokens": [],
@@ -163,12 +169,11 @@ def analyze_spans(spans):
 
     # Pass 1: identify DB span IDs to fix double-counting (children nested inside connect)
     db_span_ids = set()
-    span_info = {}
     for span in spans:
         sid = span.get("spanId", "")
         name = span.get("name", "")
-        span_info[sid] = {"name": name, "parent": span.get("parentSpanId", "")}
-        if name.split(" ")[-1] in db_names or name == "connect" or _get_span_attr(span, "db.system") == "postgresql":
+        first_word = name.split(" ")[0] if name else ""
+        if first_word in db_names or name in db_names or _get_span_attr(span, "db.system") == "postgresql":
             db_span_ids.add(sid)
 
     # Pass 2: classify all spans
@@ -202,9 +207,23 @@ def analyze_spans(spans):
                 result["invoke_mcp_tool_durations_ms"].append(dur_ms)
 
         elif sid in db_span_ids:
-            # Only count top-level DB spans (skip children nested inside other DB spans)
             if dur_ms > 0 and parent_id not in db_span_ids:
                 result["db_durations_ms"].append(dur_ms)
+            # Per-type DB metrics (all spans, including nested, for accurate counting)
+            if dur_ms > 0:
+                first_word = name.split(" ")[0] if name else ""
+                if name == "connect":
+                    result["db_connect_durations_ms"].append(dur_ms)
+                elif first_word == "INSERT":
+                    result["db_insert_durations_ms"].append(dur_ms)
+                elif name == "BEGIN;":
+                    result["db_begin_durations_ms"].append(dur_ms)
+                elif name == "COMMIT;":
+                    result["db_commit_durations_ms"].append(dur_ms)
+                elif name == "ROLLBACK;":
+                    result["db_rollback_durations_ms"].append(dur_ms)
+                else:
+                    result["db_other_durations_ms"].append(dur_ms)
 
         elif ("mcp" in http_url or "/sse" in http_url or "/messages/" in http_url) and dur_ms > 0:
             result["mcp_http_durations_ms"].append(dur_ms)
@@ -250,6 +269,21 @@ def compute_aggregates(per_request):
     _add_full_stats(metrics, "trace/list_mcp_tools", list_tools)
     _add_full_stats(metrics, "trace/invoke_mcp_tool", invoke)
     _add_full_stats(metrics, "trace/db", db)
+
+    # Per-type DB metrics
+    db_types = {
+        "trace/db_connect": "db_connect_durations_ms",
+        "trace/db_insert": "db_insert_durations_ms",
+        "trace/db_begin": "db_begin_durations_ms",
+        "trace/db_commit": "db_commit_durations_ms",
+        "trace/db_rollback": "db_rollback_durations_ms",
+        "trace/db_other": "db_other_durations_ms",
+    }
+    for prefix, key in db_types.items():
+        vals = [sum(r[key]) for r in per_request if r[key]]
+        if vals:
+            _add_full_stats(metrics, prefix, vals)
+            metrics[f"{prefix}/avg_count"] = statistics.mean([len(r[key]) for r in per_request])
 
     if tools:
         metrics["trace/avg_tool_calls_per_request"] = statistics.mean(tools)
@@ -373,6 +407,13 @@ def main():
             "list_mcp_tools_ms": sum(r["list_mcp_tools_durations_ms"]),
             "invoke_mcp_tool_ms": sum(r["invoke_mcp_tool_durations_ms"]),
             "db_duration_ms": sum(r["db_durations_ms"]),
+            "db_connect_ms": sum(r["db_connect_durations_ms"]),
+            "db_connect_count": len(r["db_connect_durations_ms"]),
+            "db_insert_ms": sum(r["db_insert_durations_ms"]),
+            "db_insert_count": len(r["db_insert_durations_ms"]),
+            "db_begin_count": len(r["db_begin_durations_ms"]),
+            "db_commit_count": len(r["db_commit_durations_ms"]),
+            "db_rollback_count": len(r["db_rollback_durations_ms"]),
             "mcp_http_duration_ms": sum(r["mcp_http_durations_ms"]),
             "input_tokens": sum(r["input_tokens"]),
             "output_tokens": sum(r["output_tokens"]),
