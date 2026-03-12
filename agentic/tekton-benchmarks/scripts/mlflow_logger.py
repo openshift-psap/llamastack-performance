@@ -57,8 +57,8 @@ def read_summary_metrics(d):
         return {}
     try:
         data = json.loads(f.read_text())
-        metrics = {f"summary/{k}": v for k, v in data.items()}
-        print(f"Parsed {len(metrics)} summary metrics")
+        metrics = {f"locust/{k}": v for k, v in data.items()}
+        print(f"Parsed {len(metrics)} locust summary metrics")
         return metrics
     except Exception as e:
         print(f"WARNING: Failed to read summary metrics: {e}")
@@ -178,28 +178,29 @@ def main():
     # Time-series metrics (per-second samples from metrics_collector)
     for sample in timeseries:
         step = sample.get("second", 0)
-        batch_metrics.append(Metric(key="active_users", value=sample.get("active_users", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="target_users", value=sample.get("target_users", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="rps_10s_window", value=sample.get("requests_per_sec", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="failures_per_sec_10s_window", value=sample.get("failures_per_sec", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="avg_response_time_cumulative_ms", value=sample.get("avg_response_time_ms", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="total_requests_cumulative", value=sample.get("total_requests", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="total_failures_cumulative", value=sample.get("total_failures", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="fail_ratio_cumulative_pct", value=sample.get("fail_ratio", 0) * 100, timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/active_users", value=sample.get("active_users", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/target_users", value=sample.get("target_users", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/rps_10s_window", value=sample.get("requests_per_sec", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/failures_per_sec_10s_window", value=sample.get("failures_per_sec", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/avg_response_time_cumulative_ms", value=sample.get("avg_response_time_ms", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/total_requests_cumulative", value=sample.get("total_requests", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/total_failures_cumulative", value=sample.get("total_failures", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/fail_ratio_cumulative_pct", value=sample.get("fail_ratio", 0) * 100, timestamp=now_ms, step=step))
 
     # HPA metrics (per-second samples from sidecar)
     for s in hpa:
         step = s.get("sample", 0)
-        batch_metrics.append(Metric(key="cluster/pod_count", value=s.get("pod_count", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="memory/avg_ki", value=s.get("avg_memory_ki", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="hpa/pod_count", value=s.get("pod_count", 0), timestamp=now_ms, step=step))
+        avg_memory_mib = s.get("avg_memory_ki", 0) / 1024
+        batch_metrics.append(Metric(key="hpa/memory_avg_mib", value=avg_memory_mib, timestamp=now_ms, step=step))
         avg_cpu_millicores = s.get("avg_cpu_n", 0) / 1_000_000
-        batch_metrics.append(Metric(key="cpu/avg_millicores", value=avg_cpu_millicores, timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="hpa/cpu_avg_millicores", value=avg_cpu_millicores, timestamp=now_ms, step=step))
         h = s.get("hpa", {})
         if h:
             batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas", 0), timestamp=now_ms, step=step))
             batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas", 0), timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="cpu/hpa_percent", value=h.get("currentCPUPct", 0), timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="memory/hpa_percent", value=h.get("currentMemoryPct", 0), timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct", 0), timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct", 0), timestamp=now_ms, step=step))
 
     # Trace per-request time-series metrics
     trace_ts_keys = [
@@ -216,6 +217,8 @@ def main():
         ("db_commit_count", "trace/ts/db_commit_count"),
         ("db_rollback_count", "trace/ts/db_rollback_count"),
         ("mcp_http_duration_ms", "trace/ts/mcp_http_duration_ms"),
+        ("ls_overhead_ms", "trace/ts/ls_overhead_ms"),
+        ("ls_overhead_pct", "trace/ts/ls_overhead_pct"),
         ("input_tokens", "trace/ts/input_tokens"),
         ("output_tokens", "trace/ts/output_tokens"),
         ("tool_calls", "trace/ts/tool_calls"),

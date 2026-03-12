@@ -240,8 +240,8 @@ spec:
           HPA=$(echo "$HPA_RAW" | jq -c ".items[]? | select(.metadata.name | contains(\"llamastack\")) | {
             currentReplicas: .status.currentReplicas,
             desiredReplicas: .status.desiredReplicas,
-            currentMemoryPct: (.status.currentMetrics[]? | select(.resource.name==\"memory\") | .resource.current.averageUtilization),
-            currentCPUPct: (.status.currentMetrics[]? | select(.resource.name==\"cpu\") | .resource.current.averageUtilization)
+            currentMemoryPct: ((.status.currentMetrics[]? | select(.resource.name==\"memory\") | .resource.current.averageUtilization) // null),
+            currentCPUPct: ((.status.currentMetrics[]? | select(.resource.name==\"cpu\") | .resource.current.averageUtilization) // null)
           }" 2>/dev/null || echo "{}")
           [ -z "$HPA" ] && HPA="{}"
 
