@@ -197,10 +197,10 @@ def main():
         batch_metrics.append(Metric(key="hpa/cpu_avg_millicores", value=avg_cpu_millicores, timestamp=now_ms, step=step))
         h = s.get("hpa", {})
         if h:
-            batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas", 0), timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas", 0), timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct", 0), timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct", 0), timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas") or 0, timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas") or 0, timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct") or 0, timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct") or 0, timestamp=now_ms, step=step))
 
     # Trace per-request time-series metrics
     trace_ts_keys = [
