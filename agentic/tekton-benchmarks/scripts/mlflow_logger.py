@@ -218,7 +218,6 @@ def main():
         ("db_rollback_count", "trace/ts/db_rollback_count"),
         ("mcp_http_duration_ms", "trace/ts/mcp_http_duration_ms"),
         ("ls_overhead_ms", "trace/ts/ls_overhead_ms"),
-        ("ls_overhead_pct", "trace/ts/ls_overhead_pct"),
         ("input_tokens", "trace/ts/input_tokens"),
         ("output_tokens", "trace/ts/output_tokens"),
         ("tool_calls", "trace/ts/tool_calls"),

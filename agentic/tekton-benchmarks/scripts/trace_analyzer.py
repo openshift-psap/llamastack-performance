@@ -234,10 +234,8 @@ def analyze_spans(spans):
         mcp = sum(result["list_mcp_tools_durations_ms"]) + sum(result["invoke_mcp_tool_durations_ms"])
         db = sum(result["db_durations_ms"])
         result["ls_overhead_ms"] = max(0, total - inference - mcp - db)
-        result["ls_overhead_pct"] = (result["ls_overhead_ms"] / total) * 100
     else:
         result["ls_overhead_ms"] = 0
-        result["ls_overhead_pct"] = 0
 
     return result
 
@@ -298,11 +296,7 @@ def compute_aggregates(per_request):
 
     # LlamaStack overhead: total - inference - mcp - db
     ls_overhead = [r["ls_overhead_ms"] for r in per_request if r.get("ls_overhead_ms", 0) > 0]
-    ls_overhead_pct = [r["ls_overhead_pct"] for r in per_request if r.get("ls_overhead_pct", 0) > 0]
     _add_full_stats(metrics, "trace/ls_overhead", ls_overhead)
-    if ls_overhead_pct:
-        metrics["trace/ls_overhead/avg_pct"] = statistics.mean(ls_overhead_pct)
-        metrics["trace/ls_overhead/p50_pct"] = statistics.median(ls_overhead_pct)
 
     if tools:
         metrics["trace/avg_tool_calls_per_request"] = statistics.mean(tools)
@@ -435,7 +429,6 @@ def main():
             "db_rollback_count": len(r["db_rollback_durations_ms"]),
             "mcp_http_duration_ms": sum(r["mcp_http_durations_ms"]),
             "ls_overhead_ms": r.get("ls_overhead_ms", 0),
-            "ls_overhead_pct": r.get("ls_overhead_pct", 0),
             "input_tokens": sum(r["input_tokens"]),
             "output_tokens": sum(r["output_tokens"]),
         }
