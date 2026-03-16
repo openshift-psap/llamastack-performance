@@ -23,7 +23,7 @@ spec:
         # vLLM connection - assumes vLLM is in the SAME namespace
         # If vLLM is in a different namespace (e.g., bench), update this URL
         - name: VLLM_URL
-          value: "http://llama-32-3b-instruct-predictor:80/v1"
+          value: "http://llama-32-3b-instruct-predictor:8080/v1"
         - name: INFERENCE_MODEL
           value: "llama-32-3b-instruct"
         - name: VLLM_TLS_VERIFY
