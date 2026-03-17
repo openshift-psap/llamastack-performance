@@ -27,7 +27,7 @@ spec:
     env:
     - name: HF_HOME
       value: /tmp/hf_home
-    image: quay.io/modh/vllm@sha256:56aa86c6ed6ba6cc9557a8583ff9d4ee535193f6cda030bd1268064bc70120e3
+    image: quay.io/vllm/vllm-cuda:0.14.1_rhai0
     name: kserve-container
     ports:
     - containerPort: 8080
