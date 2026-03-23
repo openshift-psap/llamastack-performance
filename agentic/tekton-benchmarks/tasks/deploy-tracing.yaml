@@ -5,9 +5,10 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Deploy OpenTelemetry Collector for trace collection.
+    Deploy OpenTelemetry Collector for trace collection and metrics export.
     Creates ConfigMap + Deployment + Service in the target namespace.
-    Receives OTLP traces from LlamaStack and forwards to Tempo.
+    Receives OTLP traces and metrics from LlamaStack.
+    Forwards traces to Tempo and exposes metrics as Prometheus format on :8889.
     Prerequisite: Tempo must be pre-deployed (cluster-level, requires Tempo Operator).
   params:
     - name: NAMESPACE
@@ -69,6 +70,8 @@ spec:
                 endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
                 tls:
                   insecure: true
+              prometheus:
+                endpoint: 0.0.0.0:8889
               debug:
                 verbosity: detailed
             service:
@@ -77,6 +80,10 @@ spec:
                   receivers: [otlp]
                   processors: [batch]
                   exporters: [otlp/tempo, debug]
+                metrics:
+                  receivers: [otlp]
+                  processors: [batch]
+                  exporters: [prometheus]
         CONFIG_EOF
 
         # Deployment
@@ -99,13 +106,15 @@ spec:
             spec:
               containers:
               - name: otel-collector
-                image: otel/opentelemetry-collector:latest
+                image: otel/opentelemetry-collector-contrib:latest
                 args: ["--config=/conf/otel-collector-config.yaml"]
                 ports:
                 - containerPort: 4317
                   name: otlp-grpc
                 - containerPort: 4318
                   name: otlp-http
+                - containerPort: 8889
+                  name: prometheus
                 resources:
                   requests:
                     cpu: 100m
@@ -140,6 +149,9 @@ spec:
           - name: otlp-http
             port: 4318
             targetPort: 4318
+          - name: prometheus
+            port: 8889
+            targetPort: 8889
           type: ClusterIP
         SVC_EOF
 

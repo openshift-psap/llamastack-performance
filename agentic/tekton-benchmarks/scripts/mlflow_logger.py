@@ -1,9 +1,9 @@
 """
 MLflow Logger — reads all result files and batch-logs to SageMaker MLflow.
 
-Reads summary metrics, time-series metrics, HPA metrics, and trace metrics
-from the shared workspace, then logs everything via client.log_batch()
-for efficiency.
+Reads summary metrics, time-series metrics, HPA metrics, Prometheus metrics
+(Postgres + vLLM), and trace metrics from the shared workspace, then logs
+everything via client.log_batch() for efficiency.
 
 Usage:
     python mlflow_logger.py \
@@ -99,6 +99,24 @@ def read_hpa_metrics(d):
     return samples
 
 
+def read_prometheus_metrics(d):
+    f = d / "prometheus-metrics.jsonl"
+    if not f.exists():
+        print(f"INFO: {f} not found (Prometheus metrics not captured)")
+        return []
+    samples = []
+    with open(f, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                try:
+                    samples.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    print(f"Parsed {len(samples)} Prometheus metric samples")
+    return samples
+
+
 def read_trace_metrics(d):
     f = d / "trace_metrics.json"
     if not f.exists():
@@ -141,6 +159,7 @@ def main():
     summary = read_summary_metrics(results_dir)
     timeseries = read_timeseries_metrics(results_dir)
     hpa = read_hpa_metrics(results_dir)
+    prom = read_prometheus_metrics(results_dir)
     trace_agg, trace_per_req = read_trace_metrics(results_dir)
 
     tracking_arn = os.environ.get("MLFLOW_TRACKING_ARN", "")
@@ -201,6 +220,27 @@ def main():
             batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas") or 0, timestamp=now_ms, step=step))
             batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct") or 0, timestamp=now_ms, step=step))
             batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct") or 0, timestamp=now_ms, step=step))
+
+    # Prometheus metrics (per-sample from scraper sidecar)
+    prom_keys = [
+        ("pg_active_connections", "prom/pg_active_connections"),
+        ("pg_xact_commits", "prom/pg_xact_commits"),
+        ("pg_xact_rollbacks", "prom/pg_xact_rollbacks"),
+        ("pg_cache_hit_ratio", "prom/pg_cache_hit_ratio"),
+        ("pg_deadlocks", "prom/pg_deadlocks"),
+        ("pg_rows_inserted", "prom/pg_rows_inserted"),
+        ("pg_lock_count", "prom/pg_lock_count"),
+        ("vllm_requests_running", "prom/vllm_requests_running"),
+        ("vllm_requests_waiting", "prom/vllm_requests_waiting"),
+        ("vllm_gpu_cache_pct", "prom/vllm_gpu_cache_pct"),
+        ("vllm_throughput_tps", "prom/vllm_throughput_tps"),
+    ]
+    for s in prom:
+        step = s.get("sample", 0)
+        for src_key, metric_key in prom_keys:
+            val = s.get(src_key, 0)
+            if val:
+                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
 
     # Trace per-request time-series metrics
     trace_ts_keys = [

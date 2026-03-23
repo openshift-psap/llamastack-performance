@@ -1,0 +1,68 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: push-to-prometheus
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Analyze traces and push all benchmark results to Prometheus Pushgateway.
+    Runs independently of MLflow — Grafana always gets the data.
+    Step 1: Query Tempo for traces, compute derived metrics.
+    Step 2: Push all results (Locust, HPA, traces, prom sidecar) to Pushgateway.
+  params:
+    - name: PUSHGATEWAY_URL
+      description: Prometheus Pushgateway URL
+      type: string
+      default: "http://pushgateway.llamastack-monitoring.svc:9091"
+    - name: TEMPO_ENDPOINT
+      description: Tempo HTTP API endpoint
+      type: string
+      default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+    - name: OTEL_SERVICE_NAME
+      description: Service name to filter traces in Tempo
+      type: string
+      default: "llamastack"
+    - name: NAMESPACE
+      description: Benchmark namespace (for trace filtering)
+      type: string
+      default: "avis-project"
+    - name: RUN_ID
+      description: Identifier for this pipeline run (used as Prometheus label)
+      type: string
+      default: "unknown"
+  workspaces:
+    - name: results
+      description: Shared workspace with test result files from run-locust
+  steps:
+    - name: analyze-traces
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --quiet requests
+        python3 /scripts/trace_analyzer.py \
+          --results-dir "$(workspaces.results.path)" \
+          --tempo-endpoint "$(params.TEMPO_ENDPOINT)" \
+          --service-name "$(params.OTEL_SERVICE_NAME)" \
+          --namespace "$(params.NAMESPACE)"
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+
+    - name: push-metrics
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --quiet prometheus_client
+        python3 /scripts/push_to_prometheus.py \
+          --results-dir "$(workspaces.results.path)" \
+          --pushgateway-url "$(params.PUSHGATEWAY_URL)" \
+          --run-id "$(params.RUN_ID)"
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+  volumes:
+    - name: scripts
+      configMap:
+        name: mlflow-scripts

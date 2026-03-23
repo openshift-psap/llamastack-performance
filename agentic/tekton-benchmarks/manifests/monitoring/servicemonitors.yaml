@@ -1,0 +1,47 @@
+# ServiceMonitors for OpenShift User Workload Monitoring.
+# Apply to the benchmark namespace: oc apply -f servicemonitors.yaml -n <bench-namespace>
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector-metrics
+  labels:
+    app: otel-collector
+spec:
+  endpoints:
+    - port: prometheus
+      interval: 5s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: otel-collector
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-exporter-metrics
+  labels:
+    app: postgres
+spec:
+  endpoints:
+    - port: metrics
+      interval: 5s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: postgres
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-inference-metrics
+  labels:
+    app: vllm-inference
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+      interval: 5s
+  selector:
+    matchLabels:
+      component: predictor

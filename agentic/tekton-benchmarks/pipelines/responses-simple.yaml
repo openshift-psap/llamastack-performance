@@ -143,13 +143,34 @@ spec:
           value: $(params.DISTRIBUTION_NAME)
         - name: HPA_POST_TEST_SECONDS
           value: $(params.HPA_POST_TEST_SECONDS)
+        - name: POSTGRES_METRICS_HOST
+          value: "postgres"
+        - name: VLLM_METRICS_HOST
+          value: "llama-32-3b-instruct-predictor"
 
-    # Stage 4: Log to MLflow (conditional)
+    # Stage 4: Push results to Prometheus (always runs)
+    - name: push-to-prometheus
+      taskRef:
+        name: push-to-prometheus
+      runAfter:
+        - run-locust
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: TEMPO_ENDPOINT
+          value: $(params.TEMPO_ENDPOINT)
+        - name: RUN_ID
+          value: "$(params.NAMESPACE)-$(params.USERS)u-$(params.LOAD_SHAPE)"
+
+    # Stage 5: Log to MLflow (conditional)
     - name: log-mlflow
       taskRef:
         name: log-mlflow
       runAfter:
-        - run-locust
+        - push-to-prometheus
       when:
         - input: $(params.ENABLE_MLFLOW)
           operator: in
@@ -187,7 +208,7 @@ spec:
         - name: CUSTOM_STAGES
           value: $(params.CUSTOM_STAGES)
 
-    # Stage 5: Cleanup
+    # Stage 6: Cleanup
     - name: cleanup
       taskRef:
         name: cleanup

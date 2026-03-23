@@ -1,0 +1,66 @@
+# Pushgateway for LlamaStack Benchmarks
+# Receives post-test results pushed by push_to_prometheus.py.
+# Scraped by OpenShift User Workload Monitoring via the ServiceMonitor below.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pushgateway
+  namespace: llamastack-monitoring
+  labels:
+    app: pushgateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pushgateway
+  template:
+    metadata:
+      labels:
+        app: pushgateway
+    spec:
+      containers:
+        - name: pushgateway
+          image: prom/pushgateway:v1.7.0
+          ports:
+            - containerPort: 9091
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pushgateway
+  namespace: llamastack-monitoring
+  labels:
+    app: pushgateway
+spec:
+  selector:
+    app: pushgateway
+  ports:
+    - port: 9091
+      targetPort: 9091
+      name: http
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pushgateway-metrics
+  namespace: llamastack-monitoring
+  labels:
+    app: pushgateway
+spec:
+  endpoints:
+    - port: http
+      interval: 5s
+      honorLabels: true
+  selector:
+    matchLabels:
+      app: pushgateway

@@ -69,6 +69,7 @@ spec:
         oc create configmap mlflow-scripts \
           --from-file=trace_analyzer.py=trace_analyzer.py \
           --from-file=mlflow_logger.py=mlflow_logger.py \
+          --from-file=push_to_prometheus.py=push_to_prometheus.py \
           --dry-run=client -o yaml | \
           oc apply -f - -n $(params.CONFIGMAP_NAMESPACE)
 

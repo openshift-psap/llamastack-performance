@@ -8,6 +8,7 @@ spec:
     Run Locust load test against LlamaStack or vLLM.
     Mounts locustfiles from ConfigMap, writes all result files to shared workspace.
     HPA metrics sidecar collects pod/HPA metrics during the test.
+    Prometheus scraper sidecar collects Postgres and vLLM infra metrics.
   params:
     - name: HOST
       description: Target URL to test
@@ -68,6 +69,14 @@ spec:
       description: Seconds to continue scraping HPA metrics after test ends
       type: string
       default: "30"
+    - name: POSTGRES_METRICS_HOST
+      description: "Hostname for postgres-exporter metrics (port 9187)"
+      type: string
+      default: "postgres"
+    - name: VLLM_METRICS_HOST
+      description: "Hostname for vLLM /metrics endpoint (port 8080)"
+      type: string
+      default: ""
   workspaces:
     - name: results
       description: Shared workspace for test result files (PVC-backed)
@@ -189,6 +198,24 @@ spec:
           echo "WARNING: No HPA metrics file found"
         fi
 
+        # Wait for Prometheus scraper sidecar to finish
+        WAITED=0
+        while [ $WAITED -lt $WAIT_MAX ]; do
+          if [ -f /shared/prom_done ]; then
+            echo "Prometheus metrics collection complete"
+            break
+          fi
+          sleep 2
+          WAITED=$((WAITED + 2))
+        done
+
+        if [ -f /shared/prometheus-metrics.jsonl ]; then
+          cp /shared/prometheus-metrics.jsonl "$LOCUST_OUTPUT_DIR/prometheus-metrics.jsonl"
+          echo "Prometheus metrics copied to workspace"
+        else
+          echo "WARNING: No Prometheus metrics file found"
+        fi
+
         echo ""
         echo "Result files:"
         ls -la "$LOCUST_OUTPUT_DIR/"
@@ -258,6 +285,104 @@ spec:
           fi
 
           sleep 1
+        done
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+    - name: prometheus-scraper
+      image: nicolaka/netshoot:latest
+      env:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
+        - name: POSTGRES_HOST
+          value: $(params.POSTGRES_METRICS_HOST)
+        - name: VLLM_HOST
+          value: $(params.VLLM_METRICS_HOST)
+      script: |
+        #!/bin/bash
+        PROM_FILE="/shared/prometheus-metrics.jsonl"
+        SIGNAL_FILE="/shared/locust_complete"
+        SAMPLE=0
+        POST_COUNTER=0
+        LOCUST_DONE=false
+
+        parse_metric() {
+          local body="$1" name="$2"
+          echo "$body" | grep "^${name}" | head -1 | awk '{print $2}'
+        }
+
+        while true; do
+          SAMPLE=$((SAMPLE + 1))
+          TIMESTAMP=$(date -Iseconds)
+
+          # --- Postgres metrics (from postgres-exporter :9187) ---
+          PG_ACTIVE=0; PG_COMMITS=0; PG_ROLLBACKS=0; PG_BLKS_HIT=0; PG_BLKS_READ=0
+          PG_DEADLOCKS=0; PG_TUP_INSERTED=0; PG_LOCKS=0; PG_CACHE_HIT=0
+          if [ -n "$POSTGRES_HOST" ]; then
+            PG_BODY=$(curl -s --connect-timeout 2 "http://${POSTGRES_HOST}.${NAMESPACE}.svc:9187/metrics" 2>/dev/null || echo "")
+            if [ -n "$PG_BODY" ]; then
+              PG_ACTIVE=$(parse_metric "$PG_BODY" 'pg_stat_activity_count{' | head -1)
+              PG_COMMITS=$(parse_metric "$PG_BODY" 'pg_stat_database_xact_commit{')
+              PG_ROLLBACKS=$(parse_metric "$PG_BODY" 'pg_stat_database_xact_rollback{')
+              PG_BLKS_HIT=$(parse_metric "$PG_BODY" 'pg_stat_database_blks_hit{')
+              PG_BLKS_READ=$(parse_metric "$PG_BODY" 'pg_stat_database_blks_read{')
+              PG_DEADLOCKS=$(parse_metric "$PG_BODY" 'pg_stat_database_deadlocks{')
+              PG_TUP_INSERTED=$(parse_metric "$PG_BODY" 'pg_stat_database_tup_inserted{')
+              PG_LOCKS=$(echo "$PG_BODY" | grep '^pg_locks_count{' | awk '{sum += $2} END {print sum+0}')
+              TOTAL_BLKS=$(echo "${PG_BLKS_HIT:-0} ${PG_BLKS_READ:-0}" | awk '{print $1 + $2}')
+              if [ "$TOTAL_BLKS" != "0" ] && [ -n "$TOTAL_BLKS" ]; then
+                PG_CACHE_HIT=$(echo "${PG_BLKS_HIT:-0} $TOTAL_BLKS" | awk '{printf "%.4f", $1 / $2}')
+              fi
+            fi
+          fi
+
+          # --- vLLM metrics (from :8080/metrics) ---
+          VLLM_RUNNING=0; VLLM_WAITING=0; VLLM_GPU_CACHE=0; VLLM_THROUGHPUT=0
+          if [ -n "$VLLM_HOST" ]; then
+            VLLM_BODY=$(curl -s --connect-timeout 2 "http://${VLLM_HOST}.${NAMESPACE}.svc:8080/metrics" 2>/dev/null || echo "")
+            if [ -n "$VLLM_BODY" ]; then
+              VLLM_RUNNING=$(parse_metric "$VLLM_BODY" 'vllm:num_requests_running')
+              VLLM_WAITING=$(parse_metric "$VLLM_BODY" 'vllm:num_requests_waiting')
+              VLLM_GPU_CACHE=$(parse_metric "$VLLM_BODY" 'vllm:gpu_cache_usage_perc')
+              VLLM_THROUGHPUT=$(parse_metric "$VLLM_BODY" 'vllm:avg_generation_throughput_toks_per_s')
+            fi
+          fi
+
+          if [ -f "$SIGNAL_FILE" ] && [ "$LOCUST_DONE" = "false" ]; then
+            LOCUST_DONE=true
+          fi
+          [ "$LOCUST_DONE" = "true" ] && POST_COUNTER=$((POST_COUNTER + 1))
+
+          jq -nc \
+            --arg ts "$TIMESTAMP" --argjson s "$SAMPLE" \
+            --argjson pg_active "${PG_ACTIVE:-0}" \
+            --argjson pg_commits "${PG_COMMITS:-0}" \
+            --argjson pg_rollbacks "${PG_ROLLBACKS:-0}" \
+            --argjson pg_cache_hit "${PG_CACHE_HIT:-0}" \
+            --argjson pg_deadlocks "${PG_DEADLOCKS:-0}" \
+            --argjson pg_tup_inserted "${PG_TUP_INSERTED:-0}" \
+            --argjson pg_locks "${PG_LOCKS:-0}" \
+            --argjson vllm_running "${VLLM_RUNNING:-0}" \
+            --argjson vllm_waiting "${VLLM_WAITING:-0}" \
+            --argjson vllm_gpu_cache "${VLLM_GPU_CACHE:-0}" \
+            --argjson vllm_throughput "${VLLM_THROUGHPUT:-0}" \
+            '{timestamp:$ts, sample:$s,
+              pg_active_connections:$pg_active, pg_xact_commits:$pg_commits,
+              pg_xact_rollbacks:$pg_rollbacks, pg_cache_hit_ratio:$pg_cache_hit,
+              pg_deadlocks:$pg_deadlocks, pg_rows_inserted:$pg_tup_inserted,
+              pg_lock_count:$pg_locks,
+              vllm_requests_running:$vllm_running, vllm_requests_waiting:$vllm_waiting,
+              vllm_gpu_cache_pct:$vllm_gpu_cache, vllm_throughput_tps:$vllm_throughput}' \
+            >> "$PROM_FILE"
+
+          if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
+            touch /shared/prom_done
+            break
+          fi
+
+          sleep 5
         done
       volumeMounts:
         - name: shared
