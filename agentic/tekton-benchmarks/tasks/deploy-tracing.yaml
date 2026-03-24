@@ -5,11 +5,9 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Deploy OpenTelemetry Collector via the Red Hat OTel Operator.
-    Creates an OpenTelemetryCollector CR in the target namespace.
-    Receives OTLP traces and metrics from LlamaStack.
+    Deploy OpenTelemetry Collector for trace collection and metrics export.
+    Tries the OTel Operator CR first; falls back to manual deployment if unavailable.
     Forwards traces to Tempo and exposes metrics as Prometheus format on :8889.
-    Prerequisite: OTel Operator must be installed (setup-monitoring.sh handles this).
   params:
     - name: NAMESPACE
       description: Namespace to deploy OTel Collector
@@ -25,19 +23,55 @@ spec:
         NAMESPACE="$(params.NAMESPACE)"
 
         echo "=============================================="
-        echo "Deploying OTel Collector (Operator CR)"
+        echo "Deploying OTel Collector"
         echo "=============================================="
         echo "Namespace: $NAMESPACE"
 
-        # Clean existing (both CR and legacy manual deployment)
-        oc delete opentelemetrycollector otel-collector -n $NAMESPACE --ignore-not-found=true
+        # Clean existing resources (ignore errors if CRD or resources don't exist)
+        oc delete opentelemetrycollector otel-collector -n $NAMESPACE 2>/dev/null || true
         oc delete deployment otel-collector -n $NAMESPACE --ignore-not-found=true
         oc delete service otel-collector -n $NAMESPACE --ignore-not-found=true
         oc delete configmap otel-collector-config -n $NAMESPACE --ignore-not-found=true
         sleep 3
 
-        # Create OpenTelemetryCollector CR
-        cat <<'CR_EOF' | oc apply -n $NAMESPACE -f -
+        # The OTel config is the same for both Operator CR and manual deployment
+        OTEL_CONFIG='
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+        processors:
+          batch:
+            timeout: 5s
+            send_batch_size: 1024
+        exporters:
+          otlp/tempo:
+            endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
+            tls:
+              insecure: true
+          prometheus:
+            endpoint: 0.0.0.0:8889
+          debug:
+            verbosity: detailed
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp]
+              processors: [batch]
+              exporters: [otlp/tempo, debug]
+            metrics:
+              receivers: [otlp]
+              processors: [batch]
+              exporters: [prometheus]
+        '
+
+        # Try Operator CR if CRD exists
+        if oc get crd opentelemetrycollectors.opentelemetry.io &>/dev/null; then
+          echo "OTel Operator detected — using CR"
+          cat <<CR_EOF | oc apply -n $NAMESPACE -f -
         apiVersion: opentelemetry.io/v1beta1
         kind: OpenTelemetryCollector
         metadata:
@@ -47,166 +81,103 @@ spec:
         spec:
           mode: deployment
           config:
-            receivers:
-              otlp:
-                protocols:
-                  grpc:
-                    endpoint: 0.0.0.0:4317
-                  http:
-                    endpoint: 0.0.0.0:4318
-            processors:
-              batch:
-                timeout: 5s
-                send_batch_size: 1024
-            exporters:
-              otlp/tempo:
-                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
-                tls:
-                  insecure: true
-              prometheus:
-                endpoint: 0.0.0.0:8889
-              debug:
-                verbosity: detailed
-            service:
-              pipelines:
-                traces:
-                  receivers: [otlp]
-                  processors: [batch]
-                  exporters: [otlp/tempo, debug]
-                metrics:
-                  receivers: [otlp]
-                  processors: [batch]
-                  exporters: [prometheus]
+            ${OTEL_CONFIG}
         CR_EOF
 
-        # Wait for the Operator to create the deployment
-        echo "Waiting for OTel Collector deployment..."
-        for i in $(seq 1 30); do
-          if oc get deployment -n $NAMESPACE -l app.kubernetes.io/component=opentelemetry-collector 2>/dev/null | grep -q "otel-collector"; then
-            break
-          fi
-          sleep 2
-        done
-
-        # Wait for it to be available
-        DEPLOY_NAME=$(oc get deployment -n $NAMESPACE -l app.kubernetes.io/component=opentelemetry-collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-        if [ -n "$DEPLOY_NAME" ]; then
-          oc wait --for=condition=available deployment/$DEPLOY_NAME -n $NAMESPACE --timeout=120s
-          echo ""
-          echo "OTel Collector ready (Operator-managed): $DEPLOY_NAME"
+          echo "Waiting for Operator to create deployment..."
+          for i in $(seq 1 30); do
+            DEPLOY_NAME=$(oc get deployment -n $NAMESPACE -l app.kubernetes.io/component=opentelemetry-collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+            if [ -n "$DEPLOY_NAME" ]; then
+              oc wait --for=condition=available deployment/$DEPLOY_NAME -n $NAMESPACE --timeout=120s
+              echo "OTel Collector ready (Operator): $DEPLOY_NAME"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "WARNING: Operator deployment not created in time, falling back to manual"
         else
-          echo "WARNING: OTel Collector deployment not found — Operator may not be installed"
-          echo "Falling back to manual deployment..."
-
-          # Fallback: manual deployment if Operator is not available
-          cat <<'FALLBACK_CONFIG' | oc apply -n $NAMESPACE -f -
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: otel-collector-config
-            labels:
-              app: otel-collector
-          data:
-            otel-collector-config.yaml: |
-              receivers:
-                otlp:
-                  protocols:
-                    grpc:
-                      endpoint: 0.0.0.0:4317
-                    http:
-                      endpoint: 0.0.0.0:4318
-              processors:
-                batch:
-                  timeout: 5s
-                  send_batch_size: 1024
-              exporters:
-                otlp/tempo:
-                  endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
-                  tls:
-                    insecure: true
-                prometheus:
-                  endpoint: 0.0.0.0:8889
-                debug:
-                  verbosity: detailed
-              service:
-                pipelines:
-                  traces:
-                    receivers: [otlp]
-                    processors: [batch]
-                    exporters: [otlp/tempo, debug]
-                  metrics:
-                    receivers: [otlp]
-                    processors: [batch]
-                    exporters: [prometheus]
-          FALLBACK_CONFIG
-
-          cat <<'FALLBACK_DEPLOY' | oc apply -n $NAMESPACE -f -
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: otel-collector
-            labels:
-              app: otel-collector
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: otel-collector
-            template:
-              metadata:
-                labels:
-                  app: otel-collector
-              spec:
-                containers:
-                - name: otel-collector
-                  image: otel/opentelemetry-collector-contrib:latest
-                  args: ["--config=/conf/otel-collector-config.yaml"]
-                  ports:
-                  - containerPort: 4317
-                    name: otlp-grpc
-                  - containerPort: 4318
-                    name: otlp-http
-                  - containerPort: 8889
-                    name: prometheus
-                  resources:
-                    requests:
-                      cpu: 100m
-                      memory: 128Mi
-                    limits:
-                      cpu: 500m
-                      memory: 512Mi
-                  volumeMounts:
-                  - name: config
-                    mountPath: /conf
-                volumes:
-                - name: config
-                  configMap:
-                    name: otel-collector-config
-          FALLBACK_DEPLOY
-
-          cat <<'FALLBACK_SVC' | oc apply -n $NAMESPACE -f -
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: otel-collector
-            labels:
-              app: otel-collector
-          spec:
-            selector:
-              app: otel-collector
-            ports:
-            - name: otlp-grpc
-              port: 4317
-              targetPort: 4317
-            - name: otlp-http
-              port: 4318
-              targetPort: 4318
-            - name: prometheus
-              port: 8889
-              targetPort: 8889
-            type: ClusterIP
-          FALLBACK_SVC
-
-          oc wait --for=condition=available deployment/otel-collector -n $NAMESPACE --timeout=120s
-          echo "OTel Collector ready (manual fallback)"
+          echo "OTel Operator CRD not found — using manual deployment"
         fi
+
+        # Manual fallback
+        cat <<MANUAL_EOF | oc apply -n $NAMESPACE -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: otel-collector-config
+          labels:
+            app: otel-collector
+        data:
+          otel-collector-config.yaml: |
+            ${OTEL_CONFIG}
+        MANUAL_EOF
+
+        cat <<'DEPLOY_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: otel-collector
+          labels:
+            app: otel-collector
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: otel-collector
+          template:
+            metadata:
+              labels:
+                app: otel-collector
+            spec:
+              containers:
+              - name: otel-collector
+                image: otel/opentelemetry-collector-contrib:latest
+                args: ["--config=/conf/otel-collector-config.yaml"]
+                ports:
+                - containerPort: 4317
+                  name: otlp-grpc
+                - containerPort: 4318
+                  name: otlp-http
+                - containerPort: 8889
+                  name: prometheus
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                volumeMounts:
+                - name: config
+                  mountPath: /conf
+              volumes:
+              - name: config
+                configMap:
+                  name: otel-collector-config
+        DEPLOY_EOF
+
+        cat <<'SVC_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: otel-collector
+          labels:
+            app: otel-collector
+        spec:
+          selector:
+            app: otel-collector
+          ports:
+          - name: otlp-grpc
+            port: 4317
+            targetPort: 4317
+          - name: otlp-http
+            port: 4318
+            targetPort: 4318
+          - name: prometheus
+            port: 8889
+            targetPort: 8889
+          type: ClusterIP
+        SVC_EOF
+
+        oc wait --for=condition=available deployment/otel-collector -n $NAMESPACE --timeout=120s
+        echo "OTel Collector ready (manual fallback)"

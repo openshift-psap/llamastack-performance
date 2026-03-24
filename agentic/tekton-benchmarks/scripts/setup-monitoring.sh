@@ -85,12 +85,37 @@ spec:
   sourceNamespace: openshift-marketplace
 EOF
   echo "Waiting for OTel Operator to install..."
-  for i in $(seq 1 60); do
+  sleep 15
+
+  # Auto-approve InstallPlan if stuck on Manual (known OTel Operator quirk)
+  for i in $(seq 1 6); do
+    PENDING_IP=$(oc get installplan -n openshift-operators -o json 2>/dev/null | \
+      python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+for item in data.get('items',[]):
+  if not item.get('spec',{}).get('approved',True):
+    csvs = item.get('spec',{}).get('clusterServiceVersionNames',[])
+    if any('opentelemetry' in c for c in csvs):
+      print(item['metadata']['name'])
+      break
+" 2>/dev/null || echo "")
+    if [ -n "$PENDING_IP" ]; then
+      echo "Auto-approving OTel InstallPlan: $PENDING_IP"
+      oc patch installplan "$PENDING_IP" -n openshift-operators \
+        --type=merge -p '{"spec":{"approved":true}}'
+      break
+    fi
+    sleep 10
+  done
+
+  # Wait for CRD
+  for i in $(seq 1 30); do
     if oc get crd opentelemetrycollectors.opentelemetry.io &>/dev/null; then
       echo "OTel Operator CRD available"
       break
     fi
-    sleep 5
+    sleep 10
   done
 fi
 
