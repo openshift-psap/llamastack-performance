@@ -11,7 +11,7 @@ metadata:
 data:
   llamastack-benchmark.json: |
     {
-      "annotations": { "list": [] },
+      "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [
@@ -63,8 +63,8 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
           "id": 54,
           "targets": [
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", state=\"used\"}", "legendFormat": "active (used)", "refId": "A" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", state=\"idle\"}", "legendFormat": "idle", "refId": "B" }
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)", "refId": "A" },
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle", "refId": "B" }
           ],
           "title": "LlamaStack DB Connection Pool",
           "type": "timeseries"
@@ -86,7 +86,7 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
           "id": 56,
           "targets": [
-            { "expr": "http_server_active_requests{namespace=~\"$namespace\"}", "legendFormat": "active requests", "refId": "A" },
+            { "expr": "sum by (http_method) (http_server_active_requests{namespace=~\"$namespace\", service=\"otel-collector-collector\"})", "legendFormat": "{{http_method}}", "refId": "A" },
             { "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_status_code!~\"2..\"}[1m]))", "legendFormat": "errors/s", "refId": "B" }
           ],
           "title": "Active Requests & Error Rate",
@@ -110,7 +110,7 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
           "id": 58,
           "targets": [
-            { "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\"}", "legendFormat": "CPU ratio", "refId": "A" }
+            { "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio", "refId": "A" }
           ],
           "title": "LlamaStack CPU Utilization",
           "type": "timeseries"
@@ -121,8 +121,8 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
           "id": 59,
           "targets": [
-            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\"}", "legendFormat": "RSS", "refId": "A" },
-            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\"}", "legendFormat": "virtual", "refId": "B" }
+            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS", "refId": "A" },
+            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "virtual", "refId": "B" }
           ],
           "title": "LlamaStack Memory",
           "type": "timeseries"
@@ -136,7 +136,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 0, "y": 26 },
           "id": 1,
           "targets": [{ "expr": "locust_total_requests{run_id=~\"$run_id\"}", "legendFormat": "total", "refId": "A" }],
@@ -145,20 +145,20 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ms" } },
+          "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "fixed", "fixedColor": "yellow" }, "thresholds": { "mode": "absolute", "steps": [{"color": "yellow", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 6, "y": 26 },
           "id": 2,
           "targets": [
-            { "expr": "locust_response_time_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "p50", "refId": "A" },
-            { "expr": "locust_response_time_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "p95", "refId": "B" },
-            { "expr": "locust_response_time_p99_ms{run_id=~\"$run_id\"}", "legendFormat": "p99", "refId": "C" }
+            { "expr": "locust_response_time_p50_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p50", "refId": "A" },
+            { "expr": "locust_response_time_p95_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p95", "refId": "B" },
+            { "expr": "locust_response_time_p99_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p99", "refId": "C" }
           ],
           "title": "Response Time Percentiles",
           "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "green" }, "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 12, "y": 26 },
           "id": 3,
           "targets": [{ "expr": "locust_requests_per_second{run_id=~\"$run_id\"}", "legendFormat": "req/s", "refId": "A" }],
@@ -167,7 +167,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "percent" } },
+          "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "fixed", "fixedColor": "green" }, "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 18, "y": 26 },
           "id": 4,
           "targets": [{ "expr": "locust_failure_rate_pct{run_id=~\"$run_id\"}", "legendFormat": "failure %", "refId": "A" }],
@@ -176,7 +176,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ms" } },
+          "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
           "gridPos": { "h": 7, "w": 8, "x": 0, "y": 33 },
           "id": 5,
           "targets": [
@@ -189,7 +189,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ms" } },
+          "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{"color": "orange", "value": null}] } } },
           "gridPos": { "h": 7, "w": 8, "x": 8, "y": 33 },
           "id": 6,
           "targets": [
@@ -202,7 +202,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "purple" }, "thresholds": { "mode": "absolute", "steps": [{"color": "purple", "value": null}] } } },
           "gridPos": { "h": 7, "w": 8, "x": 16, "y": 33 },
           "id": 7,
           "targets": [
@@ -283,41 +283,13 @@ data:
         {
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
-          "id": 300,
-          "title": "vLLM Performance (live from metrics)",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
-          "id": 20,
-          "targets": [
-            { "expr": "vllm:num_requests_running{namespace=~\"$namespace\"}", "legendFormat": "running", "refId": "A" },
-            { "expr": "vllm:num_requests_waiting{namespace=~\"$namespace\"}", "legendFormat": "waiting (queued)", "refId": "B" }
-          ],
-          "title": "Request Queue",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
-          "id": 21,
-          "targets": [{ "expr": "vllm:kv_cache_usage_perc{namespace=~\"$namespace\"}", "legendFormat": "KV-cache utilization", "refId": "A" }],
-          "title": "GPU KV-Cache Utilization",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
           "id": 400,
           "title": "HPA / Scaling (from Pushgateway)",
           "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 0, "y": 67 },
           "id": 30,
           "targets": [{ "expr": "hpa_pod_count{run_id=~\"$run_id\"}", "legendFormat": "pods", "refId": "A" }],
@@ -326,7 +298,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 6, "y": 67 },
           "id": 31,
           "targets": [
@@ -338,7 +310,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{"color": "orange", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 12, "y": 67 },
           "id": 32,
           "targets": [{ "expr": "hpa_avg_cpu_n{run_id=~\"$run_id\"} / 1e6", "legendFormat": "CPU (millicores)", "refId": "A" }],
@@ -347,7 +319,7 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "decbytes" } },
+          "fieldConfig": { "defaults": { "unit": "decbytes", "color": { "mode": "fixed", "fixedColor": "purple" }, "thresholds": { "mode": "absolute", "steps": [{"color": "purple", "value": null}] } } },
           "gridPos": { "h": 7, "w": 6, "x": 18, "y": 67 },
           "id": 33,
           "targets": [{ "expr": "hpa_avg_memory_ki{run_id=~\"$run_id\"} * 1024", "legendFormat": "memory", "refId": "A" }],

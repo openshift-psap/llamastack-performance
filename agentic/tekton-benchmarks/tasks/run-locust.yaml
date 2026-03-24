@@ -163,12 +163,25 @@ spec:
         # Record test start time (for trace analysis window)
         date +%s > "$LOCUST_OUTPUT_DIR/test_start_epoch"
 
-        # Post Grafana annotation: test start
-        curl -s -X POST "$(params.GRAFANA_URL)/api/annotations" \
-          -H "Content-Type: application/json" \
-          -u admin:llamastack \
-          -d "{\"text\":\"Test Start: $USERS users, $LOAD_SHAPE\",\"tags\":[\"benchmark\",\"start\"]}" \
-          2>/dev/null || true
+        # Post Grafana annotations via Python (curl not available in Locust image)
+        GRAFANA_URL="$(params.GRAFANA_URL)"
+        cat > /tmp/grafana_annotate.py << 'ANNOTATE_SCRIPT'
+        import urllib.request, json, base64, sys, os
+        url = os.environ.get("GRAFANA_URL", "") + "/api/annotations"
+        auth = "Basic " + base64.b64encode(b"admin:llamastack").decode()
+        text = sys.argv[1] if len(sys.argv) > 1 else "benchmark"
+        tag = sys.argv[2] if len(sys.argv) > 2 else "benchmark"
+        body = json.dumps({"text": text, "tags": ["benchmark", tag]}).encode()
+        req = urllib.request.Request(url, data=body, method="POST",
+            headers={"Content-Type": "application/json", "Authorization": auth})
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            print("Grafana annotation posted:", text)
+        except Exception as e:
+            print("Grafana annotation skipped:", e)
+        ANNOTATE_SCRIPT
+
+        GRAFANA_URL="$GRAFANA_URL" python3 /tmp/grafana_annotate.py "Test Start: $USERS users, $LOAD_SHAPE" "start" || true
 
         # Run Locust with CSV output to shared workspace
         cd /tmp/locustfiles
@@ -181,12 +194,7 @@ spec:
         # Record test end time
         date +%s > "$LOCUST_OUTPUT_DIR/test_end_epoch"
 
-        # Post Grafana annotation: test end
-        curl -s -X POST "$(params.GRAFANA_URL)/api/annotations" \
-          -H "Content-Type: application/json" \
-          -u admin:llamastack \
-          -d "{\"text\":\"Test End: $USERS users, $LOAD_SHAPE\",\"tags\":[\"benchmark\",\"end\"]}" \
-          2>/dev/null || true
+        GRAFANA_URL="$GRAFANA_URL" python3 /tmp/grafana_annotate.py "Test End: $USERS users, $LOAD_SHAPE" "end" || true
 
         echo ""
         echo "=============================================="

@@ -57,7 +57,7 @@ data:
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "http_server_active_requests{namespace=~\"$namespace\"}", "legendFormat": "active requests" },
+            { "expr": "sum by (http_method) (http_server_active_requests{namespace=~\"$namespace\", service=\"otel-collector-collector\"})", "legendFormat": "{{http_method}}", "refId": "A" },
             { "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_status_code!~\"2..\"}[1m]))", "legendFormat": "errors/s" }
           ],
           "fieldConfig": { "defaults": { "unit": "short" } }
@@ -68,8 +68,8 @@ data:
           "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", state=\"used\"}", "legendFormat": "active (used)" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", state=\"idle\"}", "legendFormat": "idle" }
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)" },
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle" }
           ],
           "fieldConfig": { "defaults": { "unit": "short", "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 20 } } }
         },
@@ -88,7 +88,7 @@ data:
           "title": "CPU Utilization", "type": "timeseries",
           "gridPos": { "h": 7, "w": 8, "x": 0, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\"}", "legendFormat": "CPU ratio" }],
+          "targets": [{ "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio" }],
           "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } }
         },
         {
@@ -96,8 +96,8 @@ data:
           "gridPos": { "h": 7, "w": 8, "x": 8, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\"}", "legendFormat": "RSS" },
-            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\"}", "legendFormat": "virtual" }
+            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS" },
+            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "virtual" }
           ],
           "fieldConfig": { "defaults": { "unit": "bytes" } }
         },
