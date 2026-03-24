@@ -117,6 +117,20 @@ def read_prometheus_metrics(d):
     return samples
 
 
+def read_cluster_versions(d):
+    f = d / "cluster_versions.json"
+    if not f.exists():
+        print(f"INFO: {f} not found (version collection may not have run)")
+        return {}
+    try:
+        data = json.loads(f.read_text())
+        print(f"Parsed {len(data)} cluster version entries")
+        return data
+    except Exception as e:
+        print(f"WARNING: Failed to read cluster versions: {e}")
+        return {}
+
+
 def read_trace_metrics(d):
     f = d / "trace_metrics.json"
     if not f.exists():
@@ -160,6 +174,7 @@ def main():
     timeseries = read_timeseries_metrics(results_dir)
     hpa = read_hpa_metrics(results_dir)
     prom = read_prometheus_metrics(results_dir)
+    cluster_versions = read_cluster_versions(results_dir)
     trace_agg, trace_per_req = read_trace_metrics(results_dir)
 
     tracking_arn = os.environ.get("MLFLOW_TRACKING_ARN", "")
@@ -181,6 +196,8 @@ def main():
         run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
 
     batch_params = [Param(key=k, value=str(v)) for k, v in test_params.items()]
+    for k, v in cluster_versions.items():
+        batch_params.append(Param(key=k, value=str(v)))
     batch_tags = [RunTag("pipeline", "tekton"), RunTag("run_source", "tekton-pipeline")]
 
     now_ms = int(time.time() * 1000)

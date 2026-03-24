@@ -45,3 +45,25 @@ spec:
   selector:
     matchLabels:
       component: predictor
+---
+# DCGM GPU metrics — apply to nvidia-gpu-operator namespace separately:
+#   oc apply -f servicemonitors.yaml -n nvidia-gpu-operator
+# Only the last document (this one) targets that namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nvidia-dcgm-exporter
+  namespace: nvidia-gpu-operator
+  labels:
+    app: nvidia-dcgm-exporter
+spec:
+  endpoints:
+    - path: /metrics
+      port: gpu-metrics
+      interval: 5s
+  namespaceSelector:
+    matchNames:
+      - nvidia-gpu-operator
+  selector:
+    matchLabels:
+      app: nvidia-dcgm-exporter

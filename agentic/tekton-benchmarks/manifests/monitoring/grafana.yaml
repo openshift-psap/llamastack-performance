@@ -69,8 +69,16 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboard-provider
               mountPath: /etc/grafana/provisioning/dashboards
-            - name: dashboards
-              mountPath: /var/lib/grafana/dashboards
+            - name: dashboard-benchmark
+              mountPath: /var/lib/grafana/dashboards/benchmark
+            - name: dashboard-ocp
+              mountPath: /var/lib/grafana/dashboards/ocp
+            - name: dashboard-gpu
+              mountPath: /var/lib/grafana/dashboards/gpu
+            - name: dashboard-llm
+              mountPath: /var/lib/grafana/dashboards/llm
+            - name: dashboard-deep
+              mountPath: /var/lib/grafana/dashboards/deep
             - name: data
               mountPath: /var/lib/grafana
       volumes:
@@ -80,9 +88,21 @@ spec:
         - name: dashboard-provider
           configMap:
             name: grafana-dashboard-provider
-        - name: dashboards
+        - name: dashboard-benchmark
           configMap:
             name: grafana-dashboard-llamastack
+        - name: dashboard-ocp
+          configMap:
+            name: grafana-dashboard-ocp
+        - name: dashboard-gpu
+          configMap:
+            name: grafana-dashboard-gpu
+        - name: dashboard-llm
+          configMap:
+            name: grafana-dashboard-llm
+        - name: dashboard-deep
+          configMap:
+            name: grafana-dashboard-llamastack-deep
         - name: data
           persistentVolumeClaim:
             claimName: grafana-data

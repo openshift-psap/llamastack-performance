@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-gpu
+  namespace: llamastack-monitoring
+  labels:
+    app: grafana
+data:
+  gpu-metrics.json: |
+    {
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "title": "GPU Utilization (%)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "GPU {{gpu}} ({{UUID}})" }],
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+        },
+        {
+          "title": "GPU Memory Used (GiB)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "DCGM_FI_DEV_FB_USED / 1024", "legendFormat": "GPU {{gpu}} used" },
+            { "expr": "DCGM_FI_DEV_FB_FREE / 1024", "legendFormat": "GPU {{gpu}} free" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "gibibytes" } }
+        },
+        {
+          "title": "GPU Temperature (C)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "celsius" } }
+        },
+        {
+          "title": "GPU Power Usage (W)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "watt" } }
+        },
+        {
+          "title": "GPU SM Clock (MHz)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_SM_CLOCK", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "clockhertz" } }
+        },
+        {
+          "title": "GPU PCIe TX/RX Throughput", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES[1m])", "legendFormat": "GPU {{gpu}} TX" },
+            { "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES[1m])", "legendFormat": "GPU {{gpu}} RX" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "KBs" } }
+        }
+      ],
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "GPU Metrics (DCGM)",
+      "uid": "gpu-dcgm-metrics",
+      "tags": ["llamastack", "gpu"]
+    }

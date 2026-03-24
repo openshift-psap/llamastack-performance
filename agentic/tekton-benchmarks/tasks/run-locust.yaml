@@ -77,6 +77,10 @@ spec:
       description: "Hostname for vLLM /metrics endpoint (port 8080)"
       type: string
       default: ""
+    - name: GRAFANA_URL
+      description: "Grafana URL for posting test annotations"
+      type: string
+      default: "http://grafana.llamastack-monitoring.svc:3000"
   workspaces:
     - name: results
       description: Shared workspace for test result files (PVC-backed)
@@ -159,6 +163,13 @@ spec:
         # Record test start time (for trace analysis window)
         date +%s > "$LOCUST_OUTPUT_DIR/test_start_epoch"
 
+        # Post Grafana annotation: test start
+        curl -s -X POST "$(params.GRAFANA_URL)/api/annotations" \
+          -H "Content-Type: application/json" \
+          -u admin:llamastack \
+          -d "{\"text\":\"Test Start: $USERS users, $LOAD_SHAPE\",\"tags\":[\"benchmark\",\"start\"]}" \
+          2>/dev/null || true
+
         # Run Locust with CSV output to shared workspace
         cd /tmp/locustfiles
         locust -f locustfile_main.py \
@@ -169,6 +180,13 @@ spec:
 
         # Record test end time
         date +%s > "$LOCUST_OUTPUT_DIR/test_end_epoch"
+
+        # Post Grafana annotation: test end
+        curl -s -X POST "$(params.GRAFANA_URL)/api/annotations" \
+          -H "Content-Type: application/json" \
+          -u admin:llamastack \
+          -d "{\"text\":\"Test End: $USERS users, $LOAD_SHAPE\",\"tags\":[\"benchmark\",\"end\"]}" \
+          2>/dev/null || true
 
         echo ""
         echo "=============================================="

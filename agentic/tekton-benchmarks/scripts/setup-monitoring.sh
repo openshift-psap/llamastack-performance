@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-time setup for the monitoring stack using OpenShift User Workload Monitoring.
-# Deploys Grafana + Pushgateway, connects to cluster Prometheus via SA token.
+# Deploys Grafana + Pushgateway, installs OTel Operator, connects to cluster Prometheus.
 #
 # Usage:
 #   ./scripts/setup-monitoring.sh
@@ -11,7 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFESTS_DIR="$SCRIPT_DIR/../manifests/monitoring"
 NAMESPACE="llamastack-monitoring"
-BENCH_NAMESPACE="${BENCH_NAMESPACE:-avis-project}"
+BENCH_NAMESPACE="${BENCH_NAMESPACE:-llamastack-bench}"
 GRAFANA_SA="grafana"
 
 if [ "$1" = "--delete" ]; then
@@ -19,6 +19,10 @@ if [ "$1" = "--delete" ]; then
   echo "Tearing down monitoring stack"
   echo "=============================================="
   oc delete -f "$MANIFESTS_DIR/grafana-dashboard.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-ocp.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-gpu.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-llm.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-llamastack-deep.yaml" --ignore-not-found=true
   oc delete configmap grafana-datasources -n "$NAMESPACE" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/grafana.yaml" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/prometheus.yaml" --ignore-not-found=true
@@ -60,12 +64,42 @@ else
   echo "User Workload Monitoring already enabled"
 fi
 
-# --- 2. Create namespace ---
+# --- 2. Install OTel Operator ---
+echo ""
+echo "--- Installing OpenTelemetry Operator ---"
+if oc get subscription opentelemetry-product -n openshift-operators &>/dev/null; then
+  echo "OTel Operator subscription already exists"
+else
+  echo "Creating OTel Operator subscription..."
+  oc apply -f - <<'EOF'
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: opentelemetry-product
+  namespace: openshift-operators
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: opentelemetry-product
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+  echo "Waiting for OTel Operator to install..."
+  for i in $(seq 1 60); do
+    if oc get crd opentelemetrycollectors.opentelemetry.io &>/dev/null; then
+      echo "OTel Operator CRD available"
+      break
+    fi
+    sleep 5
+  done
+fi
+
+# --- 3. Create namespace ---
 echo ""
 echo "--- Creating namespace ---"
 oc apply -f "$MANIFESTS_DIR/namespace.yaml"
 
-# --- 3. Create Grafana SA with cluster-monitoring-view ---
+# --- 4. Create Grafana SA with cluster-monitoring-view ---
 echo ""
 echo "--- Creating Grafana ServiceAccount ---"
 oc apply -f - <<EOF
@@ -86,7 +120,7 @@ if [ -z "$GRAFANA_TOKEN" ]; then
 fi
 echo "SA token obtained"
 
-# --- 4. Create datasource ConfigMap with token ---
+# --- 5. Create datasource ConfigMap with token ---
 echo ""
 echo "--- Creating Grafana datasource ---"
 oc apply -f - <<EOF
@@ -118,23 +152,55 @@ data:
       editable: true
 EOF
 
-# --- 5. Deploy Pushgateway ---
+# --- 6. Deploy Pushgateway ---
 echo ""
 echo "--- Deploying Pushgateway ---"
 oc apply -f "$MANIFESTS_DIR/prometheus.yaml"
 
-# --- 6. Deploy Grafana dashboard + Grafana ---
+# --- 7. Deploy all dashboards + Grafana ---
 echo ""
-echo "--- Deploying Grafana ---"
+echo "--- Deploying Grafana + Dashboards ---"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-ocp.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-gpu.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-llm.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-llamastack-deep.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana.yaml"
 
-# --- 7. Apply ServiceMonitors to benchmark namespace ---
+# --- 8. Apply ServiceMonitors to benchmark namespace ---
 echo ""
-echo "--- Applying ServiceMonitors to $BENCH_NAMESPACE ---"
+echo "--- Applying ServiceMonitors ---"
+# Benchmark namespace ServiceMonitors (otel-collector, postgres, vllm)
 oc apply -f "$MANIFESTS_DIR/servicemonitors.yaml" -n "$BENCH_NAMESPACE"
 
-# --- 8. Wait for pods ---
+# DCGM ServiceMonitor (in nvidia-gpu-operator namespace, if it exists)
+if oc get namespace nvidia-gpu-operator &>/dev/null; then
+  echo "Applying DCGM ServiceMonitor to nvidia-gpu-operator..."
+  oc apply -f - <<'EOF'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nvidia-dcgm-exporter
+  namespace: nvidia-gpu-operator
+  labels:
+    app: nvidia-dcgm-exporter
+spec:
+  endpoints:
+    - path: /metrics
+      port: gpu-metrics
+      interval: 5s
+  namespaceSelector:
+    matchNames:
+      - nvidia-gpu-operator
+  selector:
+    matchLabels:
+      app: nvidia-dcgm-exporter
+EOF
+else
+  echo "nvidia-gpu-operator namespace not found — GPU dashboard will be empty"
+fi
+
+# --- 9. Wait for pods ---
 echo ""
 echo "--- Waiting for Pushgateway ---"
 oc wait --for=condition=available deployment/pushgateway -n "$NAMESPACE" --timeout=120s
@@ -153,8 +219,12 @@ echo "  oc port-forward svc/grafana 3000:3000 -n $NAMESPACE"
 echo "  Then open: http://localhost:3000"
 echo "  Login: admin / llamastack"
 echo ""
+echo "Dashboards:"
+echo "  - LlamaStack Benchmark (summary + Pushgateway)"
+echo "  - OCP Cluster Overview"
+echo "  - GPU Metrics (DCGM)"
+echo "  - LLM Inference (vLLM)"
+echo "  - LlamaStack Deep Dive (OTel application metrics)"
+echo ""
 echo "Datasource: OpenShift Prometheus (thanos-querier)"
 echo "Pushgateway: pushgateway.$NAMESPACE.svc:9091"
-echo ""
-echo "The dashboard 'LlamaStack Benchmark' is auto-provisioned."
-echo "Select your benchmark namespace and run_id in the dropdowns."

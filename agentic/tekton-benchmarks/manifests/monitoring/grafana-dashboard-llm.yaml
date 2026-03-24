@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-llm
+  namespace: llamastack-monitoring
+  labels:
+    app: grafana
+data:
+  llm-inference.json: |
+    {
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "title": "vLLM Request Queue", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "vllm:num_requests_running{namespace=~\"$namespace\"}", "legendFormat": "running" },
+            { "expr": "vllm:num_requests_waiting{namespace=~\"$namespace\"}", "legendFormat": "waiting" },
+            { "expr": "vllm:num_requests_swapped{namespace=~\"$namespace\"}", "legendFormat": "swapped" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } } } }
+        },
+        {
+          "title": "KV-Cache Utilization", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "vllm:kv_cache_usage_perc{namespace=~\"$namespace\"}", "legendFormat": "KV-cache %" }],
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+        },
+        {
+          "title": "Time to First Token (p50/p95/p99)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p99" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "s" } }
+        },
+        {
+          "title": "End-to-End Request Latency (p50/p95)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "s" } }
+        },
+        {
+          "title": "Prompt Throughput (tokens/s)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "vllm:avg_prompt_throughput_toks_per_s{namespace=~\"$namespace\"}", "legendFormat": "prompt tok/s" }],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        },
+        {
+          "title": "Generation Throughput (tokens/s)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "vllm:avg_generation_throughput_toks_per_s{namespace=~\"$namespace\"}", "legendFormat": "gen tok/s" }],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        }
+      ],
+      "templating": {
+        "list": [{
+          "name": "namespace",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "definition": "label_values(up, namespace)",
+          "current": { "text": "llamastack-bench", "value": "llamastack-bench" },
+          "includeAll": true, "multi": true, "refresh": 2, "type": "query"
+        }]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "LLM Inference (vLLM)",
+      "uid": "llm-inference-vllm",
+      "tags": ["llamastack", "vllm"]
+    }

@@ -68,6 +68,40 @@ spec:
     - name: results
       description: Shared workspace containing test result files from run-locust
   steps:
+    - name: collect-versions
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+        RESULTS_DIR="$(workspaces.results.path)"
+        NS="$(params.NAMESPACE)"
+
+        OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}' 2>/dev/null || echo "unknown")
+
+        RHOAI_VERSION=$(oc get csv -n redhat-ods-operator -o jsonpath='{.items[?(@.spec.displayName=="Red Hat OpenShift AI")].spec.version}' 2>/dev/null || echo "unknown")
+
+        LS_OPERATOR_VERSION=$(oc get csv -n llama-stack-k8s-operator-system -o jsonpath='{.items[?(@.spec.displayName)].spec.version}' 2>/dev/null || echo "unknown")
+        if [ "$LS_OPERATOR_VERSION" = "" ]; then
+          LS_OPERATOR_VERSION=$(oc get deployment -n llama-stack-k8s-operator-system -o jsonpath='{.items[0].spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+        fi
+
+        LS_IMAGE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
+
+        PG_IMAGE=$(oc get deployment postgres -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+
+        cat > "$RESULTS_DIR/cluster_versions.json" <<VERSIONS_EOF
+        {
+          "openshift_version": "$OCP_VERSION",
+          "openshift_ai_version": "$RHOAI_VERSION",
+          "llamastack_operator_version": "$LS_OPERATOR_VERSION",
+          "llamastack_image": "$LS_IMAGE",
+          "postgres_image": "$PG_IMAGE"
+        }
+        VERSIONS_EOF
+
+        echo "Collected cluster versions:"
+        cat "$RESULTS_DIR/cluster_versions.json"
+
     - name: analyze-traces
       image: registry.access.redhat.com/ubi9/python-311:latest
       script: |
