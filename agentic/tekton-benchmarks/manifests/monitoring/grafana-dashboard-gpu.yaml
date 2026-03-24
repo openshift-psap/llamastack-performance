@@ -1,3 +1,4 @@
+# Dashboard 2: Database — PostgreSQL health from exporter + LlamaStack DB connection pool from OTel
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,62 +7,103 @@ metadata:
   labels:
     app: grafana
 data:
-  gpu-metrics.json: |
+  database.json: |
     {
+      "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [
         {
-          "title": "GPU Utilization (%)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "GPU {{gpu}} ({{UUID}})" }],
-          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100, "title": "PostgreSQL Server (from postgres-exporter)", "type": "row"
         },
         {
-          "title": "GPU Memory Used (GiB)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "title": "Active Connections (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "sum by (state) (pg_stat_activity_count{namespace=~\"$namespace\"})", "legendFormat": "{{state}}" }],
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 1
+        },
+        {
+          "title": "Cache Hit Ratio (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "pg_stat_database_blks_hit{namespace=~\"$namespace\", datname=\"llamastack\"} / (pg_stat_database_blks_hit{namespace=~\"$namespace\", datname=\"llamastack\"} + pg_stat_database_blks_read{namespace=~\"$namespace\", datname=\"llamastack\"} > 0)", "legendFormat": "cache hit ratio" }],
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 2
+        },
+        {
+          "title": "Transaction Rate (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "DCGM_FI_DEV_FB_USED / 1024", "legendFormat": "GPU {{gpu}} used" },
-            { "expr": "DCGM_FI_DEV_FB_FREE / 1024", "legendFormat": "GPU {{gpu}} free" }
+            { "expr": "rate(pg_stat_database_xact_commit{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "commits/s" },
+            { "expr": "rate(pg_stat_database_xact_rollback{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "rollbacks/s" }
           ],
-          "fieldConfig": { "defaults": { "unit": "gibibytes" } }
+          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 3
         },
         {
-          "title": "GPU Temperature (C)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "title": "Lock Count by Mode (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "celsius" } }
+          "targets": [{ "expr": "sum by (mode) (pg_locks_count{namespace=~\"$namespace\"})", "legendFormat": "{{mode}}" }],
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 4
         },
         {
-          "title": "GPU Power Usage (W)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "title": "Deadlocks (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "watt" } }
+          "targets": [{ "expr": "rate(pg_stat_database_deadlocks{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "deadlocks/s" }],
+          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 5
         },
         {
-          "title": "GPU SM Clock (MHz)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_SM_CLOCK", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "clockhertz" } }
-        },
-        {
-          "title": "GPU PCIe TX/RX Throughput", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "title": "Row Throughput (postgres-exporter)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES[1m])", "legendFormat": "GPU {{gpu}} TX" },
-            { "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES[1m])", "legendFormat": "GPU {{gpu}} RX" }
+            { "expr": "rate(pg_stat_database_tup_inserted{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "inserts/s" },
+            { "expr": "rate(pg_stat_database_tup_updated{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "updates/s" }
           ],
-          "fieldConfig": { "defaults": { "unit": "KBs" } }
+          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
+          "id": 6
+        },
+        {
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+          "id": 200, "title": "LlamaStack Connection Pool (from OTel Collector)", "type": "row"
+        },
+        {
+          "title": "DB Connection Pool (OTel)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)" },
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
+          "id": 7
+        },
+        {
+          "title": "DB Connection Pool — stacked (OTel)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "used" },
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle" },
+            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"} + db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "pool total" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
+          "id": 8
         }
       ],
+      "templating": {
+        "list": [{ "name": "namespace", "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(up, namespace)", "current": { "text": "llamastack-bench", "value": "llamastack-bench" }, "includeAll": true, "multi": true, "refresh": 2, "type": "query" }]
+      },
       "time": { "from": "now-1h", "to": "now" },
-      "title": "GPU Metrics (DCGM)",
-      "uid": "gpu-dcgm-metrics",
-      "tags": ["llamastack", "gpu"]
+      "title": "Database",
+      "uid": "llamastack-database",
+      "tags": ["llamastack", "database"]
     }

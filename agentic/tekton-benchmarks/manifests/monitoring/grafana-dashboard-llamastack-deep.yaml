@@ -1,3 +1,4 @@
+# Dashboard 3: LlamaStack — Application metrics from OTel Collector
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,14 +7,18 @@ metadata:
   labels:
     app: grafana
 data:
-  llamastack-deep-dive.json: |
+  llamastack.json: |
     {
+      "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [
-        { "title": "GenAI Inference", "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "collapsed": false },
         {
-          "title": "GenAI Chat Latency (p50/p95/p99)", "type": "timeseries",
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100, "title": "GenAI Inference (from OTel Collector)", "type": "row"
+        },
+        {
+          "title": "GenAI Chat Latency p50/p95/p99 (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
@@ -21,126 +26,130 @@ data:
             { "expr": "histogram_quantile(0.95, sum(rate(gen_ai_client_operation_duration_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" },
             { "expr": "histogram_quantile(0.99, sum(rate(gen_ai_client_operation_duration_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p99" }
           ],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 1
         },
         {
-          "title": "Chat Completion Request Rate", "type": "timeseries",
+          "title": "Chat Completion Request Rate (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(gen_ai_client_operation_duration_seconds_count{namespace=~\"$namespace\"}[1m]))", "legendFormat": "requests/s" }],
-          "fieldConfig": { "defaults": { "unit": "reqps" } }
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "id": 2
         },
         {
-          "title": "GenAI Avg Latency", "type": "timeseries",
+          "title": "GenAI Avg Latency (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(gen_ai_client_operation_duration_seconds_sum{namespace=~\"$namespace\"}[1m])) / sum(rate(gen_ai_client_operation_duration_seconds_count{namespace=~\"$namespace\"}[1m]))", "legendFormat": "avg latency" }],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 3
         },
-        { "title": "HTTP API Server", "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "collapsed": false },
         {
-          "title": "API Request Rate by Endpoint", "type": "timeseries",
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+          "id": 200, "title": "HTTP API Server (from OTel Collector)", "type": "row"
+        },
+        {
+          "title": "API Request Rate by Endpoint (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_target!=\"\"}[1m])) by (http_target)", "legendFormat": "{{http_target}}" }],
-          "fieldConfig": { "defaults": { "unit": "reqps" } }
+          "fieldConfig": { "defaults": { "unit": "reqps" } },
+          "id": 4
         },
         {
-          "title": "API Latency by Endpoint (p95)", "type": "timeseries",
+          "title": "API Latency by Endpoint p95 (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{namespace=~\"$namespace\", http_target!=\"\"}[1m])) by (le, http_target))", "legendFormat": "{{http_target}} p95" }],
-          "fieldConfig": { "defaults": { "unit": "ms" } }
+          "fieldConfig": { "defaults": { "unit": "ms" } },
+          "id": 5
         },
         {
-          "title": "Active Requests & Error Rate", "type": "timeseries",
+          "title": "Active Requests & Error Rate (OTel)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "sum by (http_method) (http_server_active_requests{namespace=~\"$namespace\", service=\"otel-collector-collector\"})", "legendFormat": "{{http_method}}", "refId": "A" },
+            { "expr": "sum by (http_method) (http_server_active_requests{namespace=~\"$namespace\", service=\"otel-collector-collector\"})", "legendFormat": "{{http_method}}" },
             { "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_status_code!~\"2..\"}[1m]))", "legendFormat": "errors/s" }
           ],
-          "fieldConfig": { "defaults": { "unit": "short" } }
-        },
-        { "title": "Database", "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }, "collapsed": false },
-        {
-          "title": "DB Connection Pool", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 19 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 20 } } }
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "id": 6
         },
         {
-          "title": "Upstream vLLM Latency (p50/p95)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
+          "title": "Upstream vLLM Call Latency (OTel)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(http_client_duration_milliseconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "vLLM call p50" },
             { "expr": "histogram_quantile(0.95, sum(rate(http_client_duration_milliseconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "vLLM call p95" }
           ],
-          "fieldConfig": { "defaults": { "unit": "ms" } }
+          "fieldConfig": { "defaults": { "unit": "ms" } },
+          "id": 12
         },
-        { "title": "Process Health", "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }, "collapsed": false },
         {
-          "title": "CPU Utilization", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 27 },
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+          "id": 300, "title": "Process Health (from OTel Collector)", "type": "row"
+        },
+        {
+          "title": "CPU Utilization (OTel)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio" }],
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } }
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+          "id": 7
         },
         {
-          "title": "Memory Usage", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 27 },
+          "title": "Memory Usage (OTel)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS" },
             { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "virtual" }
           ],
-          "fieldConfig": { "defaults": { "unit": "bytes" } }
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "id": 8
         },
         {
-          "title": "Threads & File Descriptors", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 27 },
+          "title": "Threads & File Descriptors (OTel)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "process_thread_count{namespace=~\"$namespace\"}", "legendFormat": "threads" },
-            { "expr": "process_open_file_descriptor_count{namespace=~\"$namespace\"}", "legendFormat": "open FDs" }
+            { "expr": "process_thread_count{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "threads" },
+            { "expr": "process_open_file_descriptor_count{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "open FDs" }
           ],
-          "fieldConfig": { "defaults": { "unit": "short" } }
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "id": 9
         },
-        { "title": "Python Runtime", "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 }, "collapsed": false },
         {
-          "title": "Asyncio Coroutine Rate", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 35 },
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+          "id": 400, "title": "Python Runtime (from OTel Collector)", "type": "row"
+        },
+        {
+          "title": "Asyncio Coroutine Rate (OTel)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(asyncio_process_created_total{namespace=~\"$namespace\"}[1m])) by (name)", "legendFormat": "{{name}}" }],
-          "fieldConfig": { "defaults": { "unit": "ops" } }
+          "fieldConfig": { "defaults": { "unit": "ops" } },
+          "id": 10
         },
         {
-          "title": "GC Collections & Objects", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 35 },
+          "title": "GC Collections & Objects (OTel)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "sum(rate(cpython_gc_collections_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "GC collections/s" },
             { "expr": "sum(rate(cpython_gc_collected_objects_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "objects collected/s" }
           ],
-          "fieldConfig": { "defaults": { "unit": "short" } }
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "id": 11
         }
       ],
       "templating": {
-        "list": [{
-          "name": "namespace",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "definition": "label_values(up, namespace)",
-          "current": { "text": "llamastack-bench", "value": "llamastack-bench" },
-          "includeAll": true, "multi": true, "refresh": 2, "type": "query"
-        }]
+        "list": [{ "name": "namespace", "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(up, namespace)", "current": { "text": "llamastack-bench", "value": "llamastack-bench" }, "includeAll": true, "multi": true, "refresh": 2, "type": "query" }]
       },
       "time": { "from": "now-1h", "to": "now" },
-      "title": "LlamaStack Deep Dive",
-      "uid": "llamastack-deep-dive",
-      "tags": ["llamastack", "deep-dive"]
+      "title": "LlamaStack",
+      "uid": "llamastack-app",
+      "tags": ["llamastack", "application"]
     }

@@ -71,7 +71,7 @@ data:
         }]
       },
       "time": { "from": "now-1h", "to": "now" },
-      "title": "OCP Cluster Overview",
+      "title": "Cluster",
       "uid": "ocp-cluster-overview",
       "tags": ["llamastack", "cluster"]
     }

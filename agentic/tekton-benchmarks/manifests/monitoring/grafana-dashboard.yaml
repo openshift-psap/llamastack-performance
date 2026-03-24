@@ -1,5 +1,4 @@
-# Auto-provisioned Grafana dashboard for LlamaStack benchmarks.
-# Metric names verified against actual OTel Collector output.
+# Dashboard 5: Overview — Locust load test results + Trace analysis + HPA scaling
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,357 +6,131 @@ metadata:
   namespace: llamastack-monitoring
   labels:
     app: grafana
-    grafana_dashboard: "true"
 data:
-  llamastack-benchmark.json: |
+  overview.json: |
     {
       "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [
         {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-          "id": 50,
-          "title": "LlamaStack Application (live from OTel Collector)",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
-          "id": 51,
-          "targets": [
-            { "expr": "histogram_quantile(0.50, sum(rate(gen_ai_client_operation_duration_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50", "refId": "A" },
-            { "expr": "histogram_quantile(0.95, sum(rate(gen_ai_client_operation_duration_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95", "refId": "B" },
-            { "expr": "histogram_quantile(0.99, sum(rate(gen_ai_client_operation_duration_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p99", "refId": "C" }
-          ],
-          "title": "GenAI Chat Latency (p50/p95/p99)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
-          "id": 52,
-          "targets": [
-            { "expr": "sum(rate(gen_ai_client_operation_duration_seconds_count{namespace=~\"$namespace\"}[1m]))", "legendFormat": "chat requests/s", "refId": "A" }
-          ],
-          "title": "Chat Completion Request Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
-          "id": 53,
-          "targets": [
-            { "expr": "sum(rate(gen_ai_client_operation_duration_seconds_sum{namespace=~\"$namespace\"}[1m])) / sum(rate(gen_ai_client_operation_duration_seconds_count{namespace=~\"$namespace\"}[1m]))", "legendFormat": "avg latency", "refId": "A" }
-          ],
-          "title": "GenAI Avg Latency",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
-          "id": 54,
-          "targets": [
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)", "refId": "A" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle", "refId": "B" }
-          ],
-          "title": "LlamaStack DB Connection Pool",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
-          "id": 55,
-          "targets": [
-            { "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_target!=\"\"}[1m])) by (http_target)", "legendFormat": "{{http_target}}", "refId": "A" }
-          ],
-          "title": "API Request Rate by Endpoint",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
-          "id": 56,
-          "targets": [
-            { "expr": "sum by (http_method) (http_server_active_requests{namespace=~\"$namespace\", service=\"otel-collector-collector\"})", "legendFormat": "{{http_method}}", "refId": "A" },
-            { "expr": "sum(rate(http_server_duration_milliseconds_count{namespace=~\"$namespace\", http_status_code!~\"2..\"}[1m]))", "legendFormat": "errors/s", "refId": "B" }
-          ],
-          "title": "Active Requests & Error Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
-          "id": 57,
-          "targets": [
-            { "expr": "histogram_quantile(0.50, sum(rate(http_client_duration_milliseconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "vLLM call p50", "refId": "A" },
-            { "expr": "histogram_quantile(0.95, sum(rate(http_client_duration_milliseconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "vLLM call p95", "refId": "B" }
-          ],
-          "title": "Upstream vLLM Latency (p50/p95)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
-          "id": 58,
-          "targets": [
-            { "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio", "refId": "A" }
-          ],
-          "title": "LlamaStack CPU Utilization",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
-          "id": 59,
-          "targets": [
-            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS", "refId": "A" },
-            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "virtual", "refId": "B" }
-          ],
-          "title": "LlamaStack Memory",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
-          "id": 100,
-          "title": "Locust / Trace Summary (from Pushgateway)",
-          "type": "row"
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100, "title": "Locust Load Test (from Pushgateway)", "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 0, "y": 26 },
-          "id": 1,
+          "gridPos": { "h": 7, "w": 6, "x": 0, "y": 1 }, "id": 1,
           "targets": [{ "expr": "locust_total_requests{run_id=~\"$run_id\"}", "legendFormat": "total", "refId": "A" }],
-          "title": "Total Requests",
-          "type": "stat"
+          "title": "Total Requests", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "fixed", "fixedColor": "yellow" }, "thresholds": { "mode": "absolute", "steps": [{"color": "yellow", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 6, "y": 26 },
-          "id": 2,
+          "gridPos": { "h": 7, "w": 6, "x": 6, "y": 1 }, "id": 2,
           "targets": [
             { "expr": "locust_response_time_p50_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p50", "refId": "A" },
             { "expr": "locust_response_time_p95_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p95", "refId": "B" },
             { "expr": "locust_response_time_p99_ms{run_id=~\"$run_id\"} / 1000", "legendFormat": "p99", "refId": "C" }
           ],
-          "title": "Response Time Percentiles",
-          "type": "stat"
+          "title": "Response Time Percentiles", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "green" }, "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 12, "y": 26 },
-          "id": 3,
+          "gridPos": { "h": 7, "w": 6, "x": 12, "y": 1 }, "id": 3,
           "targets": [{ "expr": "locust_requests_per_second{run_id=~\"$run_id\"}", "legendFormat": "req/s", "refId": "A" }],
-          "title": "Requests/sec",
-          "type": "stat"
+          "title": "Requests/sec", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "fixed", "fixedColor": "green" }, "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 18, "y": 26 },
-          "id": 4,
+          "gridPos": { "h": 7, "w": 6, "x": 18, "y": 1 }, "id": 4,
           "targets": [{ "expr": "locust_failure_rate_pct{run_id=~\"$run_id\"}", "legendFormat": "failure %", "refId": "A" }],
-          "title": "Failure Rate",
-          "type": "stat"
+          "title": "Failure Rate", "type": "stat"
+        },
+        {
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+          "id": 200, "title": "Trace Analysis (from Pushgateway)", "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 33 },
-          "id": 5,
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 }, "id": 5,
           "targets": [
             { "expr": "trace_trace_inference_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "inference", "refId": "A" },
             { "expr": "trace_trace_db_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "database", "refId": "B" },
             { "expr": "trace_trace_ls_overhead_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "LS overhead", "refId": "C" }
           ],
-          "title": "Latency Breakdown (p50)",
-          "type": "bargauge"
+          "title": "Latency Breakdown (p50)", "type": "bargauge"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{"color": "orange", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 33 },
-          "id": 6,
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 }, "id": 6,
           "targets": [
             { "expr": "trace_trace_total_request_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "p50", "refId": "A" },
             { "expr": "trace_trace_total_request_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "p95", "refId": "B" },
             { "expr": "trace_trace_total_request_p99_ms{run_id=~\"$run_id\"}", "legendFormat": "p99", "refId": "C" }
           ],
-          "title": "E2E Latency (trace)",
-          "type": "stat"
+          "title": "E2E Latency (trace)", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "purple" }, "thresholds": { "mode": "absolute", "steps": [{"color": "purple", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 33 },
-          "id": 7,
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 }, "id": 7,
           "targets": [
             { "expr": "trace_last_input_tokens{run_id=~\"$run_id\"}", "legendFormat": "input", "refId": "A" },
             { "expr": "trace_last_output_tokens{run_id=~\"$run_id\"}", "legendFormat": "output", "refId": "B" },
             { "expr": "trace_last_tool_calls{run_id=~\"$run_id\"}", "legendFormat": "tool calls", "refId": "C" }
           ],
-          "title": "Tokens & Tool Calls (last req)",
-          "type": "stat"
+          "title": "Tokens & Tool Calls (last req)", "type": "stat"
         },
         {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
-          "id": 200,
-          "title": "PostgreSQL Health (live from exporter)",
-          "type": "row"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 41 },
-          "id": 10,
-          "targets": [{ "expr": "sum by (state) (pg_stat_activity_count{namespace=~\"$namespace\"})", "legendFormat": "{{state}}", "refId": "A" }],
-          "title": "Active Connections",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 41 },
-          "id": 11,
-          "targets": [{ "expr": "pg_stat_database_blks_hit{namespace=~\"$namespace\", datname=\"llamastack\"} / (pg_stat_database_blks_hit{namespace=~\"$namespace\", datname=\"llamastack\"} + pg_stat_database_blks_read{namespace=~\"$namespace\", datname=\"llamastack\"} > 0)", "legendFormat": "cache hit ratio", "refId": "A" }],
-          "title": "Cache Hit Ratio",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 41 },
-          "id": 12,
-          "targets": [
-            { "expr": "rate(pg_stat_database_xact_commit{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "commits/s", "refId": "A" },
-            { "expr": "rate(pg_stat_database_xact_rollback{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "rollbacks/s", "refId": "B" }
-          ],
-          "title": "Transaction Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
-          "id": 13,
-          "targets": [{ "expr": "sum by (mode) (pg_locks_count{namespace=~\"$namespace\"})", "legendFormat": "{{mode}}", "refId": "A" }],
-          "title": "Lock Count by Mode",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
-          "id": 14,
-          "targets": [{ "expr": "rate(pg_stat_database_deadlocks{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "deadlocks/s", "refId": "A" }],
-          "title": "Deadlocks",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "spanNulls": false } } },
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
-          "id": 15,
-          "targets": [
-            { "expr": "rate(pg_stat_database_tup_inserted{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "inserts/s", "refId": "A" },
-            { "expr": "rate(pg_stat_database_tup_updated{namespace=~\"$namespace\", datname=\"llamastack\"}[1m])", "legendFormat": "updates/s", "refId": "B" }
-          ],
-          "title": "Row Throughput",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": false,
-          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
-          "id": 400,
-          "title": "HPA / Scaling (from Pushgateway)",
-          "type": "row"
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+          "id": 300, "title": "HPA / Scaling (from Pushgateway)", "type": "row"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 0, "y": 67 },
-          "id": 30,
+          "gridPos": { "h": 7, "w": 6, "x": 0, "y": 17 }, "id": 30,
           "targets": [{ "expr": "hpa_pod_count{run_id=~\"$run_id\"}", "legendFormat": "pods", "refId": "A" }],
-          "title": "Pod Count",
-          "type": "stat"
+          "title": "Pod Count", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 6, "y": 67 },
-          "id": 31,
+          "gridPos": { "h": 7, "w": 6, "x": 6, "y": 17 }, "id": 31,
           "targets": [
             { "expr": "hpa_current_replicas{run_id=~\"$run_id\"}", "legendFormat": "current", "refId": "A" },
             { "expr": "hpa_desired_replicas{run_id=~\"$run_id\"}", "legendFormat": "desired", "refId": "B" }
           ],
-          "title": "HPA Replicas",
-          "type": "stat"
+          "title": "HPA Replicas", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{"color": "orange", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 12, "y": 67 },
-          "id": 32,
+          "gridPos": { "h": 7, "w": 6, "x": 12, "y": 17 }, "id": 32,
           "targets": [{ "expr": "hpa_avg_cpu_n{run_id=~\"$run_id\"} / 1e6", "legendFormat": "CPU (millicores)", "refId": "A" }],
-          "title": "Avg CPU (millicores)",
-          "type": "stat"
+          "title": "Avg CPU (millicores)", "type": "stat"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "decbytes", "color": { "mode": "fixed", "fixedColor": "purple" }, "thresholds": { "mode": "absolute", "steps": [{"color": "purple", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 6, "x": 18, "y": 67 },
-          "id": 33,
+          "gridPos": { "h": 7, "w": 6, "x": 18, "y": 17 }, "id": 33,
           "targets": [{ "expr": "hpa_avg_memory_ki{run_id=~\"$run_id\"} * 1024", "legendFormat": "memory", "refId": "A" }],
-          "title": "Avg Memory",
-          "type": "stat"
+          "title": "Avg Memory", "type": "stat"
         }
       ],
       "schemaVersion": 39,
-      "tags": ["llamastack", "benchmark"],
+      "tags": ["llamastack", "overview"],
       "templating": {
         "list": [
-          {
-            "current": { "selected": false, "text": "avis-project", "value": "avis-project" },
-            "datasource": { "type": "prometheus", "uid": "prometheus" },
-            "definition": "label_values(up, namespace)",
-            "hide": 0,
-            "includeAll": true,
-            "multi": true,
-            "name": "namespace",
-            "query": { "query": "label_values(up, namespace)", "refId": "ns" },
-            "refresh": 2,
-            "type": "query"
-          },
-          {
-            "current": { "selected": false, "text": "All", "value": "$__all" },
-            "datasource": { "type": "prometheus", "uid": "prometheus" },
-            "definition": "label_values(locust_total_requests, run_id)",
-            "hide": 0,
-            "includeAll": true,
-            "multi": false,
-            "name": "run_id",
-            "query": { "query": "label_values(locust_total_requests, run_id)", "refId": "rid" },
-            "refresh": 2,
-            "type": "query"
-          }
+          { "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(up, namespace)", "hide": 0, "includeAll": true, "multi": true, "name": "namespace", "query": { "query": "label_values(up, namespace)", "refId": "ns" }, "refresh": 2, "type": "query" },
+          { "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(locust_total_requests, run_id)", "hide": 0, "includeAll": true, "multi": false, "name": "run_id", "query": { "query": "label_values(locust_total_requests, run_id)", "refId": "rid" }, "refresh": 2, "type": "query" }
         ]
       },
       "time": { "from": "now-1h", "to": "now" },
-      "title": "LlamaStack Benchmark",
-      "uid": "llamastack-benchmark"
+      "title": "Overview",
+      "uid": "llamastack-overview"
     }

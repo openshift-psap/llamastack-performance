@@ -1,3 +1,4 @@
+# Dashboard 1: Inference — GPU (DCGM) + vLLM metrics
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,104 +7,160 @@ metadata:
   labels:
     app: grafana
 data:
-  llm-inference.json: |
+  inference.json: |
     {
+      "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [
         {
-          "title": "vLLM Request Queue", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100, "title": "vLLM Inference (from vLLM /metrics)", "type": "row"
+        },
+        {
+          "title": "Request Queue (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "vllm:num_requests_running{namespace=~\"$namespace\"}", "legendFormat": "running" },
             { "expr": "vllm:num_requests_waiting{namespace=~\"$namespace\"}", "legendFormat": "waiting" }
           ],
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } } } }
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } } } },
+          "id": 1
         },
         {
-          "title": "KV-Cache Utilization", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "title": "KV-Cache Utilization (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "vllm:kv_cache_usage_perc{namespace=~\"$namespace\"}", "legendFormat": "KV-cache %" }],
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+          "id": 2
         },
         {
-          "title": "Time to First Token (p50/p95/p99)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "title": "Time to First Token (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
             { "expr": "histogram_quantile(0.95, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" },
             { "expr": "histogram_quantile(0.99, sum(rate(vllm:time_to_first_token_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p99" }
           ],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 3
         },
         {
-          "title": "E2E Request Latency (p50/p95)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+          "title": "E2E Request Latency (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
             { "expr": "histogram_quantile(0.95, sum(rate(vllm:e2e_request_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 4
         },
         {
-          "title": "Prompt Throughput (tokens/s)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+          "title": "Prompt Throughput (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(vllm:prompt_tokens_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "prompt tok/s" }],
-          "fieldConfig": { "defaults": { "unit": "short" } }
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "id": 5
         },
         {
-          "title": "Generation Throughput (tokens/s)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+          "title": "Generation Throughput (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(vllm:generation_tokens_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "gen tok/s" }],
-          "fieldConfig": { "defaults": { "unit": "short" } }
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "id": 6
         },
         {
-          "title": "Queue Time (p50/p95)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+          "title": "Queue Time (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(vllm:request_queue_time_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
             { "expr": "histogram_quantile(0.95, sum(rate(vllm:request_queue_time_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 7
         },
         {
-          "title": "Inter-Token Latency (p50/p95)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+          "title": "Inter-Token Latency (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(vllm:inter_token_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p50" },
             { "expr": "histogram_quantile(0.95, sum(rate(vllm:inter_token_latency_seconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "p95" }
           ],
-          "fieldConfig": { "defaults": { "unit": "s" } }
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "id": 8
         },
         {
-          "title": "Prefix Cache Hit Rate", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+          "title": "Prefix Cache Hit Rate (vLLM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "sum(rate(vllm:prefix_cache_hits_total{namespace=~\"$namespace\"}[1m])) / sum(rate(vllm:prefix_cache_queries_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "hit rate" }],
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+          "id": 9
+        },
+        {
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+          "id": 200, "title": "GPU Hardware (from DCGM exporter)", "type": "row"
+        },
+        {
+          "title": "GPU Utilization % (DCGM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+          "id": 10
+        },
+        {
+          "title": "GPU Memory (DCGM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "sum(rate(vllm:prefix_cache_hits_total{namespace=~\"$namespace\"}[1m])) / sum(rate(vllm:prefix_cache_queries_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "hit rate" }
+            { "expr": "DCGM_FI_DEV_FB_USED / 1024", "legendFormat": "GPU {{gpu}} used" },
+            { "expr": "DCGM_FI_DEV_FB_FREE / 1024", "legendFormat": "GPU {{gpu}} free" }
           ],
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+          "fieldConfig": { "defaults": { "unit": "gibibytes" } },
+          "id": 11
+        },
+        {
+          "title": "GPU Temperature (DCGM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 34 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "celsius" } },
+          "id": 12
+        },
+        {
+          "title": "GPU Power (DCGM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 34 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [{ "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "GPU {{gpu}}" }],
+          "fieldConfig": { "defaults": { "unit": "watt" } },
+          "id": 13
+        },
+        {
+          "title": "GPU PCIe Throughput (DCGM)", "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 34 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES[1m])", "legendFormat": "GPU {{gpu}} TX" },
+            { "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES[1m])", "legendFormat": "GPU {{gpu}} RX" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "KBs" } },
+          "id": 14
         }
       ],
       "templating": {
-        "list": [{
-          "name": "namespace",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "definition": "label_values(vllm:num_requests_running, namespace)",
-          "current": { "text": "llamastack-bench", "value": "llamastack-bench" },
-          "includeAll": true, "multi": true, "refresh": 2, "type": "query"
-        }]
+        "list": [{ "name": "namespace", "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(up, namespace)", "current": { "text": "llamastack-bench", "value": "llamastack-bench" }, "includeAll": true, "multi": true, "refresh": 2, "type": "query" }]
       },
       "time": { "from": "now-1h", "to": "now" },
-      "title": "LLM Inference (vLLM)",
-      "uid": "llm-inference-vllm",
-      "tags": ["llamastack", "vllm"]
+      "title": "Inference",
+      "uid": "llamastack-inference",
+      "tags": ["llamastack", "inference"]
     }
