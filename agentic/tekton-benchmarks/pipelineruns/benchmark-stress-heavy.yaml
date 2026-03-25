@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: stress-heavy-128u-
+  generateName: stress-heavy-500u-
   namespace: tekton-llamastack
 spec:
   pipelineRef:
@@ -20,9 +20,9 @@ spec:
     - name: NAMESPACE
       value: "llamastack-bench"
     - name: USERS
-      value: "128"
+      value: "500"
     - name: SPAWN_RATE
-      value: "10"
+      value: "500"
     - name: RUN_TIME_SECONDS
       value: "300"
     - name: PROMPT

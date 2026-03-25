@@ -8,6 +8,7 @@ metadata:
 data:
   ocp-cluster-overview.json: |
     {
+      "annotations": { "list": [{ "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "iconColor": "red", "name": "Benchmarks", "target": { "refId": "Anno", "tags": ["benchmark"], "type": "tags" } }] },
       "editable": true,
       "graphTooltip": 1,
       "panels": [

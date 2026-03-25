@@ -55,10 +55,11 @@ spec:
         #!/bin/bash
         set -e
         pip install --quiet prometheus_client
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
         python3 /scripts/push_to_prometheus.py \
           --results-dir "$(workspaces.results.path)" \
           --pushgateway-url "$(params.PUSHGATEWAY_URL)" \
-          --run-id "$(params.RUN_ID)"
+          --run-id "$(params.RUN_ID)-${TIMESTAMP}"
       volumeMounts:
         - name: scripts
           mountPath: /scripts
