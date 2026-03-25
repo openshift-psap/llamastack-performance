@@ -65,9 +65,10 @@ data:
         "list": [{
           "name": "namespace",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "definition": "label_values(kube_pod_info, namespace)",
+          "definition": "label_values(up, namespace)",
+          "query": { "query": "label_values(up, namespace)", "refId": "ns" },
           "current": { "text": "llamastack-bench", "value": "llamastack-bench" },
-          "includeAll": true, "multi": true, "refresh": 2, "type": "query"
+          "hide": 0, "includeAll": true, "multi": true, "refresh": 2, "type": "query"
         }]
       },
       "time": { "from": "now-1h", "to": "now" },

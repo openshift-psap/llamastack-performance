@@ -1,0 +1,35 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: stress-heavy-128u-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: responses-simple-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  params:
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: USERS
+      value: "128"
+    - name: SPAWN_RATE
+      value: "10"
+    - name: RUN_TIME_SECONDS
+      value: "300"
+    - name: PROMPT
+      value: "Explain in detail how neural networks learn through backpropagation, including the chain rule, gradient descent, learning rate selection, and common optimization techniques like Adam and RMSprop. Provide examples of how each step works mathematically."
+    - name: LOAD_SHAPE
+      value: "steady"
+    - name: ENABLE_MLFLOW
+      value: "false"
+    - name: SKIP_CLEANUP
+      value: "true"
