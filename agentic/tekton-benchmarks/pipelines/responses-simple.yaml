@@ -56,6 +56,12 @@ spec:
     - name: TEMPO_ENDPOINT
       type: string
       default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+    - name: INPUT_TOKENS
+      type: string
+      default: "0"
+    - name: OUTPUT_TOKENS
+      type: string
+      default: "0"
     - name: SKIP_CLEANUP
       type: string
       default: "false"
@@ -147,6 +153,10 @@ spec:
           value: "postgres"
         - name: VLLM_METRICS_HOST
           value: "llama-32-3b-instruct-predictor"
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
 
     # Stage 4: Push results to Prometheus (always runs)
     - name: push-to-prometheus
@@ -207,6 +217,10 @@ spec:
           value: $(params.EXTRA_ENV)
         - name: CUSTOM_STAGES
           value: $(params.CUSTOM_STAGES)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
 
     # Stage 6: Cleanup
     - name: cleanup

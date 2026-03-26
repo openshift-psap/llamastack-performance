@@ -56,6 +56,14 @@ spec:
     - name: DISTRIBUTION_NAME
       type: string
       default: "llamastack-benchmark"
+    - name: INPUT_TOKENS
+      description: "Input token count used for this test"
+      type: string
+      default: "0"
+    - name: OUTPUT_TOKENS
+      description: "Output token limit used for this test"
+      type: string
+      default: "0"
     - name: EXTRA_ENV
       description: "Shape-specific params to log (KEY=VALUE per line)"
       type: string
@@ -159,6 +167,8 @@ spec:
           --param user_class="$(params.USER_CLASS)" \
           --param namespace="$(params.NAMESPACE)" \
           --param distribution_name="$(params.DISTRIBUTION_NAME)" \
+          --param input_tokens="$(params.INPUT_TOKENS)" \
+          --param output_tokens="$(params.OUTPUT_TOKENS)" \
           --param custom_stages='$(params.CUSTOM_STAGES)' \
           $(echo '$(params.EXTRA_ENV)' | while IFS= read -r line; do
             if [ -n "$line" ] && echo "$line" | grep -q "="; then
