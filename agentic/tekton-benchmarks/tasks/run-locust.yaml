@@ -77,6 +77,14 @@ spec:
       description: "Hostname for vLLM /metrics endpoint (port 8080)"
       type: string
       default: ""
+    - name: INPUT_TOKENS
+      description: "Target input prompt length in tokens (0 = use PROMPT as-is)"
+      type: string
+      default: "0"
+    - name: OUTPUT_TOKENS
+      description: "Max output tokens per request (0 = no limit)"
+      type: string
+      default: "0"
     - name: GRAFANA_URL
       description: "Grafana URL for posting test annotations"
       type: string
@@ -106,6 +114,10 @@ spec:
           value: $(params.CUSTOM_STAGES)
         - name: USER_CLASS
           value: $(params.USER_CLASS)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
         - name: LOCUST_OUTPUT_DIR
           value: "$(workspaces.results.path)"
         - name: HPA_POST_TEST_SECONDS
