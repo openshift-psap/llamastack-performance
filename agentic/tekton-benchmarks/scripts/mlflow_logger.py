@@ -131,6 +131,20 @@ def read_cluster_versions(d):
         return {}
 
 
+def read_prometheus_query_results(d):
+    f = d / "prometheus_query_results.json"
+    if not f.exists():
+        print(f"INFO: {f} not found (Prometheus query may not have run)")
+        return {}
+    try:
+        data = json.loads(f.read_text())
+        print(f"Parsed {len(data)} Prometheus query results")
+        return data
+    except Exception as e:
+        print(f"WARNING: Failed to read Prometheus query results: {e}")
+        return {}
+
+
 def read_trace_metrics(d):
     f = d / "trace_metrics.json"
     if not f.exists():
@@ -174,6 +188,7 @@ def main():
     timeseries = read_timeseries_metrics(results_dir)
     hpa = read_hpa_metrics(results_dir)
     prom = read_prometheus_metrics(results_dir)
+    prom_query = read_prometheus_query_results(results_dir)
     cluster_versions = read_cluster_versions(results_dir)
     trace_agg, trace_per_req = read_trace_metrics(results_dir)
 
@@ -285,6 +300,10 @@ def main():
             val = r.get(src_key, 0)
             if val:
                 batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
+
+    # Prometheus query results (OTel, vLLM, GPU, Postgres aggregates for test window)
+    for name, val in prom_query.items():
+        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
 
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
 

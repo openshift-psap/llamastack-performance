@@ -5,10 +5,10 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Analyze traces and push all benchmark results to Prometheus Pushgateway.
-    Runs independently of MLflow — Grafana always gets the data.
+    Analyze traces, query Prometheus, and push results to Pushgateway.
     Step 1: Query Tempo for traces, compute derived metrics.
-    Step 2: Push all results (Locust, HPA, traces, prom sidecar) to Pushgateway.
+    Step 2: Query Prometheus for OTel/vLLM/GPU metrics during the test window.
+    Step 3: Push all results to Pushgateway for Grafana.
   params:
     - name: PUSHGATEWAY_URL
       description: Prometheus Pushgateway URL
@@ -44,6 +44,18 @@ spec:
           --results-dir "$(workspaces.results.path)" \
           --tempo-endpoint "$(params.TEMPO_ENDPOINT)" \
           --service-name "$(params.OTEL_SERVICE_NAME)" \
+          --namespace "$(params.NAMESPACE)"
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+
+    - name: query-prometheus
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      script: |
+        #!/bin/bash
+        set -e
+        python3 /scripts/query_prometheus.py \
+          --results-dir "$(workspaces.results.path)" \
           --namespace "$(params.NAMESPACE)"
       volumeMounts:
         - name: scripts

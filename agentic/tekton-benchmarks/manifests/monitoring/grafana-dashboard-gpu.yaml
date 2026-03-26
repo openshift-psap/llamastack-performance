@@ -77,7 +77,7 @@ data:
         },
         {
           "title": "DB Connection Pool (OTel)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "active (used)" },
@@ -85,18 +85,6 @@ data:
           ],
           "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
           "id": 7
-        },
-        {
-          "title": "DB Connection Pool — stacked (OTel)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"}", "legendFormat": "used" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "idle" },
-            { "expr": "db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"used\"} + db_client_connections_usage{namespace=~\"$namespace\", service=\"otel-collector-collector\", state=\"idle\"}", "legendFormat": "pool total" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "spanNulls": false, "stacking": { "mode": "normal" } } } },
-          "id": 8
         }
       ],
       "templating": {
