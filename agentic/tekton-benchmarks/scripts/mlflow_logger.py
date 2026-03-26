@@ -301,9 +301,18 @@ def main():
             if val:
                 batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
 
-    # Prometheus query results (OTel, vLLM, GPU, Postgres aggregates for test window)
-    for name, val in prom_query.items():
-        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
+    # Prometheus query results (OTel, vLLM, GPU, Postgres, Cluster for test window)
+    if isinstance(prom_query, dict):
+        # Aggregate metrics
+        for name, val in prom_query.get("aggregate", {}).items():
+            batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
+        # Time-series metrics (same step-by-step as Grafana)
+        for ts_name, points in prom_query.get("timeseries", {}).items():
+            for point in points:
+                step = point.get("step", 0)
+                val = point.get("value", 0)
+                if val:
+                    batch_metrics.append(Metric(key=ts_name, value=val, timestamp=now_ms, step=step))
 
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
 
