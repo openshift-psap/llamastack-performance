@@ -120,14 +120,19 @@ def main():
     agg = output["aggregate"]
     ts = output["timeseries"]
 
+    def safe_name(s):
+        """Sanitize metric names for MLflow (no double slashes, no leading slash in labels)."""
+        return s.replace("//", "/").strip("/")
+
     def query_and_store(name, query, is_labeled=False, label_key=""):
         r = prom_query_range(url, query, token, start, end)
         if is_labeled and label_key:
             labeled = extract_labeled_series(r, label_key)
             for label, points in labeled.items():
-                ts_name = f"{name}/{label}"
+                clean_label = label.strip("/").replace("/", "_")
+                ts_name = safe_name(f"{name}/{clean_label}")
                 ts[ts_name] = [{"step": s, "value": round(v, 6)} for s, v in points]
-                agg[f"{ts_name}/avg"] = round(avg_val(points), 6)
+                agg[safe_name(f"{ts_name}/avg")] = round(avg_val(points), 6)
             total_points = [p for pts in labeled.values() for p in pts]
             if total_points:
                 agg[f"{name}/avg"] = round(avg_val(total_points), 6)
