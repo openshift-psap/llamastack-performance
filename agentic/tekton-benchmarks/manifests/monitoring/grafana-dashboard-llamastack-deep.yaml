@@ -1,4 +1,4 @@
-# Dashboard 3: LlamaStack — Application metrics from OTel Collector
+# Dashboard: LlamaStack — Application metrics from OTel Collector
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -78,7 +78,7 @@ data:
         },
         {
           "title": "Upstream vLLM Call Latency (OTel)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "histogram_quantile(0.50, sum(rate(http_client_duration_milliseconds_bucket{namespace=~\"$namespace\"}[1m])) by (le))", "legendFormat": "vLLM call p50" },
@@ -93,7 +93,7 @@ data:
         },
         {
           "title": "CPU Utilization (OTel)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 19 },
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio" }],
           "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
@@ -101,7 +101,7 @@ data:
         },
         {
           "title": "Memory Usage (OTel)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 19 },
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS" },
@@ -112,7 +112,7 @@ data:
         },
         {
           "title": "Threads & File Descriptors (OTel)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 19 },
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "process_thread_count{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "threads" },
@@ -122,12 +122,12 @@ data:
           "id": 9
         },
         {
-          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
           "id": 400, "title": "Python Runtime (from OTel Collector)", "type": "row"
         },
         {
           "title": "Asyncio Coroutine Rate (OTel)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 27 },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 35 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [{ "expr": "sum(rate(asyncio_process_created_total{namespace=~\"$namespace\"}[1m])) by (name)", "legendFormat": "{{name}}" }],
           "fieldConfig": { "defaults": { "unit": "ops" } },
@@ -135,7 +135,7 @@ data:
         },
         {
           "title": "GC Collections & Objects (OTel)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 27 },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 35 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
             { "expr": "sum(rate(cpython_gc_collections_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "GC collections/s" },

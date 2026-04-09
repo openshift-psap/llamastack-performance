@@ -5,15 +5,94 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Deploy OpenTelemetry Collector for trace collection and metrics export.
-    Tries the OTel Operator CR first; falls back to manual deployment if unavailable.
+    Flush Tempo trace storage and deploy OpenTelemetry Collector.
+    Step 1: Delete and recreate the TempoMonolithic CR to start with clean trace storage.
+    Step 2: Deploy OTel Collector (Operator CR first, manual fallback).
     Forwards traces to Tempo and exposes metrics as Prometheus format on :8889.
   params:
     - name: NAMESPACE
       description: Namespace to deploy OTel Collector
       type: string
       default: "llamastack-bench"
+    - name: TEMPO_NAMESPACE
+      description: Namespace where Tempo Operator is installed
+      type: string
+      default: "openshift-tempo-operator"
   steps:
+    - name: flush-tempo
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        TEMPO_NS="$(params.TEMPO_NAMESPACE)"
+        echo "=============================================="
+        echo "Flushing Tempo trace storage"
+        echo "=============================================="
+
+        # Delete the TempoMonolithic CR and its PVCs to wipe all stored traces
+        echo "Deleting TempoMonolithic CR..."
+        oc delete tempomonolithic tracing -n $TEMPO_NS --ignore-not-found=true
+
+        echo "Waiting for Tempo pods to terminate..."
+        oc wait --for=delete pod -l app.kubernetes.io/instance=tracing -n $TEMPO_NS --timeout=120s 2>/dev/null || true
+        sleep 5
+
+        echo "Deleting Tempo PVCs..."
+        oc delete pvc -l app.kubernetes.io/instance=tracing -n $TEMPO_NS --ignore-not-found=true
+        sleep 3
+
+        # Recreate the TempoMonolithic CR with a clean PV
+        echo "Recreating TempoMonolithic CR..."
+        cat <<'TEMPO_EOF' | oc apply -n $TEMPO_NS -f -
+        apiVersion: tempo.grafana.com/v1alpha1
+        kind: TempoMonolithic
+        metadata:
+          name: tracing
+        spec:
+          ingestion:
+            otlp:
+              grpc:
+                enabled: true
+              http:
+                enabled: true
+          multitenancy:
+            enabled: true
+            mode: openshift
+            authentication:
+            - tenantName: dev
+              tenantId: "1610b0c3-c509-4592-a256-a1871353dbfa"
+          jaegerui:
+            enabled: true
+            route:
+              enabled: true
+          queryFrontend:
+            extraConfig:
+              server:
+                grpc_server_max_recv_msg_size: 20971520
+                grpc_server_max_send_msg_size: 20971520
+          storage:
+            traces:
+              backend: pv
+              size: 10Gi
+        TEMPO_EOF
+
+        echo "Waiting for Tempo to become ready..."
+        for i in $(seq 1 60); do
+          POD_READY=$(oc get pod -n $TEMPO_NS -l app.kubernetes.io/instance=tracing -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+          if [ "$POD_READY" = "True" ]; then
+            echo "Tempo is ready"
+            break
+          fi
+          if [ $i -eq 60 ]; then
+            echo "WARNING: Tempo did not become ready within 120s, continuing anyway"
+          fi
+          sleep 2
+        done
+
+        echo ""
+        echo "Tempo trace storage flushed — ready for clean trace collection"
+
     - name: deploy-otel-collector
       image: quay.io/openshift/origin-cli:latest
       script: |

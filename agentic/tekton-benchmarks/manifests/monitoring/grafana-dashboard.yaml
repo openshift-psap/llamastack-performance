@@ -127,7 +127,7 @@ data:
       "templating": {
         "list": [
           { "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(up, namespace)", "hide": 0, "includeAll": true, "multi": true, "name": "namespace", "query": { "query": "label_values(up, namespace)", "refId": "ns" }, "refresh": 2, "type": "query" },
-          { "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(locust_total_requests, run_id)", "hide": 0, "includeAll": true, "multi": false, "name": "run_id", "query": { "query": "label_values(locust_total_requests, run_id)", "refId": "rid" }, "refresh": 2, "type": "query" }
+          { "current": {}, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(locust_total_requests, run_id)", "hide": 0, "includeAll": false, "multi": false, "name": "run_id", "query": { "query": "label_values(locust_total_requests, run_id)", "refId": "rid" }, "refresh": 2, "sort": 2, "type": "query" }
         ]
       },
       "time": { "from": "now-1h", "to": "now" },

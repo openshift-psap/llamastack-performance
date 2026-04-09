@@ -57,6 +57,18 @@ spec:
               value: "true"
             - name: GF_AUTH_ANONYMOUS_ORG_ROLE
               value: Viewer
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
           resources:
             requests:
               cpu: 100m
@@ -69,14 +81,16 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboard-provider
               mountPath: /etc/grafana/provisioning/dashboards
-            - name: dashboard-benchmark
-              mountPath: /var/lib/grafana/dashboards/benchmark
+            - name: dashboard-overview
+              mountPath: /var/lib/grafana/dashboards/overview
             - name: dashboard-ocp
               mountPath: /var/lib/grafana/dashboards/ocp
+            - name: dashboard-database
+              mountPath: /var/lib/grafana/dashboards/database
+            - name: dashboard-inference
+              mountPath: /var/lib/grafana/dashboards/inference
             - name: dashboard-gpu
               mountPath: /var/lib/grafana/dashboards/gpu
-            - name: dashboard-llm
-              mountPath: /var/lib/grafana/dashboards/llm
             - name: dashboard-deep
               mountPath: /var/lib/grafana/dashboards/deep
             - name: data
@@ -88,18 +102,21 @@ spec:
         - name: dashboard-provider
           configMap:
             name: grafana-dashboard-provider
-        - name: dashboard-benchmark
+        - name: dashboard-overview
           configMap:
             name: grafana-dashboard-llamastack
         - name: dashboard-ocp
           configMap:
             name: grafana-dashboard-ocp
+        - name: dashboard-database
+          configMap:
+            name: grafana-dashboard-database
+        - name: dashboard-inference
+          configMap:
+            name: grafana-dashboard-inference
         - name: dashboard-gpu
           configMap:
             name: grafana-dashboard-gpu
-        - name: dashboard-llm
-          configMap:
-            name: grafana-dashboard-llm
         - name: dashboard-deep
           configMap:
             name: grafana-dashboard-llamastack-deep

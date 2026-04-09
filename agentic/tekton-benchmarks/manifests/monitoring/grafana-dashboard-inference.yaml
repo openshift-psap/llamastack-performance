@@ -1,8 +1,8 @@
-# Dashboard 1: Inference — GPU (DCGM) + vLLM metrics
+# Dashboard: Inference — vLLM serving metrics
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: grafana-dashboard-llm
+  name: grafana-dashboard-inference
   namespace: llamastack-monitoring
   labels:
     app: grafana
@@ -104,56 +104,6 @@ data:
           "targets": [{ "expr": "sum(rate(vllm:prefix_cache_hits_total{namespace=~\"$namespace\"}[1m])) / sum(rate(vllm:prefix_cache_queries_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "hit rate" }],
           "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
           "id": 9
-        },
-        {
-          "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
-          "id": 200, "title": "GPU Hardware (from DCGM exporter)", "type": "row"
-        },
-        {
-          "title": "GPU Utilization % (DCGM)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
-          "id": 10
-        },
-        {
-          "title": "GPU Memory (DCGM)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [
-            { "expr": "DCGM_FI_DEV_FB_USED / 1024", "legendFormat": "GPU {{gpu}} used" },
-            { "expr": "DCGM_FI_DEV_FB_FREE / 1024", "legendFormat": "GPU {{gpu}} free" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "gibibytes" } },
-          "id": 11
-        },
-        {
-          "title": "GPU Temperature (DCGM)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 34 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "celsius" } },
-          "id": 12
-        },
-        {
-          "title": "GPU Power (DCGM)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 34 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "GPU {{gpu}}" }],
-          "fieldConfig": { "defaults": { "unit": "watt" } },
-          "id": 13
-        },
-        {
-          "title": "GPU PCIe Throughput (DCGM)", "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 34 },
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [
-            { "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES[1m])", "legendFormat": "GPU {{gpu}} TX" },
-            { "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES[1m])", "legendFormat": "GPU {{gpu}} RX" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "KBs" } },
-          "id": 14
         }
       ],
       "templating": {

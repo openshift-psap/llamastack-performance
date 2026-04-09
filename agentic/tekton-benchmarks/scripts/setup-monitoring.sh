@@ -20,8 +20,9 @@ if [ "$1" = "--delete" ]; then
   echo "=============================================="
   oc delete -f "$MANIFESTS_DIR/grafana-dashboard.yaml" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/grafana-dashboard-ocp.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-database.yaml" --ignore-not-found=true
+  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-inference.yaml" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/grafana-dashboard-gpu.yaml" --ignore-not-found=true
-  oc delete -f "$MANIFESTS_DIR/grafana-dashboard-llm.yaml" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/grafana-dashboard-llamastack-deep.yaml" --ignore-not-found=true
   oc delete configmap grafana-datasources -n "$NAMESPACE" --ignore-not-found=true
   oc delete -f "$MANIFESTS_DIR/grafana.yaml" --ignore-not-found=true
@@ -187,8 +188,9 @@ echo ""
 echo "--- Deploying Grafana + Dashboards ---"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard-ocp.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-database.yaml"
+oc apply -f "$MANIFESTS_DIR/grafana-dashboard-inference.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard-gpu.yaml"
-oc apply -f "$MANIFESTS_DIR/grafana-dashboard-llm.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard-llamastack-deep.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana.yaml"
 
@@ -245,11 +247,12 @@ echo "  Then open: http://localhost:3000"
 echo "  Login: admin / llamastack"
 echo ""
 echo "Dashboards:"
-echo "  - LlamaStack Benchmark (summary + Pushgateway)"
-echo "  - OCP Cluster Overview"
-echo "  - GPU Metrics (DCGM)"
-echo "  - LLM Inference (vLLM)"
-echo "  - LlamaStack Deep Dive (OTel application metrics)"
+echo "  - Overview (Locust + Trace analysis + HPA)"
+echo "  - Cluster (OCP nodes + pods)"
+echo "  - Database (PostgreSQL + connection pool)"
+echo "  - Inference (vLLM serving metrics)"
+echo "  - GPU (NVIDIA DCGM hardware)"
+echo "  - LlamaStack (OTel application deep dive)"
 echo ""
 echo "Datasource: OpenShift Prometheus (thanos-querier)"
 echo "Pushgateway: pushgateway.$NAMESPACE.svc:9091"
