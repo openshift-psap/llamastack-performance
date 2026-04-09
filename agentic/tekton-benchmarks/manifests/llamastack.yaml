@@ -17,8 +17,6 @@ spec:
     podOverrides:
       serviceAccountName: default
     containerSpec:
-      command:
-        - /opt/app-root/entrypoint.sh
       env:
         # vLLM connection - assumes vLLM is in the SAME namespace
         # If vLLM is in a different namespace (e.g., bench), update this URL
@@ -67,7 +65,7 @@ spec:
       name: llama-stack
       port: 8321
     distribution:
-      image: quay.io/opendatahub/llama-stack@sha256:175563c0461cc717c5918791cfcda8f5f55580e96445fa302c3dbb4d24805cdb
+      image: quay.io/rhoai/odh-llama-stack-core-rhel9:rhoai-3.4-ea.2
     storage:
       size: 20Gi
       mountPath: /opt/app-root/src/.llama/distributions/rh

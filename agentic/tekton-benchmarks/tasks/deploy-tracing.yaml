@@ -180,7 +180,7 @@ spec:
             spec:
               containers:
               - name: otel-collector
-                image: otel/opentelemetry-collector-contrib:0.116.0
+                image: otel/opentelemetry-collector-contrib:0.144.0
                 args: ["--config=/conf/otel-collector-config.yaml"]
                 ports:
                 - containerPort: 4317
