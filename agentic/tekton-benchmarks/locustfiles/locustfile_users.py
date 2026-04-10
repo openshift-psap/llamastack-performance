@@ -25,16 +25,22 @@ SYNTHETIC_PROMPT_FILENAME = "synthetic_prompt.txt"
 
 def _load_prompt():
     """Load the prompt, preferring a tokenizer-generated file from the workspace."""
+    import sys
     output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "")
+    print(f"[prompt-loader] LOCUST_OUTPUT_DIR={output_dir!r}, INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}", file=sys.stderr, flush=True)
     if output_dir:
         prompt_file = Path(output_dir) / SYNTHETIC_PROMPT_FILENAME
-        if prompt_file.exists():
+        exists = prompt_file.exists()
+        print(f"[prompt-loader] Checking {prompt_file} exists={exists}", file=sys.stderr, flush=True)
+        if exists:
             prompt = prompt_file.read_text().strip()
             if prompt:
-                print(f"Loaded synthetic prompt from {prompt_file} ({len(prompt)} chars)")
+                print(f"[prompt-loader] Loaded synthetic prompt: {len(prompt)} chars", file=sys.stderr, flush=True)
                 return prompt
 
-    return os.environ.get("PROMPT", "What is the capital of France?")
+    fallback = os.environ.get("PROMPT", "What is the capital of France?")
+    print(f"[prompt-loader] Using PROMPT env var fallback: {len(fallback)} chars", file=sys.stderr, flush=True)
+    return fallback
 
 
 class ResponsesMCPUser(HttpUser):
