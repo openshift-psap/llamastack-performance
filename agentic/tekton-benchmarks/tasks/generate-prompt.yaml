@@ -1,0 +1,97 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: generate-prompt
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Generate a synthetic prompt with an exact token count using the deployed
+    model's tokenizer. Execs into the vLLM pod to access the tokenizer at
+    /mnt/models, generates Faker text, encodes/truncates to the target token
+    count, and writes the result to the shared workspace for Locust to use.
+    Skipped when INPUT_TOKENS is 0 (Locust uses the PROMPT param as-is).
+  params:
+    - name: NAMESPACE
+      description: Namespace where vLLM is deployed
+      type: string
+      default: "llamastack-bench"
+    - name: MODEL_NAME
+      description: vLLM InferenceService name (used to find the predictor pod)
+      type: string
+      default: "llama-32-3b-instruct"
+    - name: INPUT_TOKENS
+      description: "Target prompt length in tokens (0 = skip generation)"
+      type: string
+      default: "0"
+  workspaces:
+    - name: results
+      description: Shared workspace where the generated prompt is written
+  steps:
+    - name: generate
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        INPUT_TOKENS="$(params.INPUT_TOKENS)"
+        NAMESPACE="$(params.NAMESPACE)"
+        MODEL_NAME="$(params.MODEL_NAME)"
+        PROMPT_FILE="$(workspaces.results.path)/synthetic_prompt.txt"
+
+        if [ "$INPUT_TOKENS" -eq 0 ] 2>/dev/null; then
+          echo "INPUT_TOKENS=0, skipping prompt generation"
+          exit 0
+        fi
+
+        echo "=============================================="
+        echo "Generating synthetic prompt: ${INPUT_TOKENS} tokens"
+        echo "=============================================="
+
+        PREDICTOR_POD=$(oc get pod -n $NAMESPACE -l serving.kserve.io/inferenceservice=$MODEL_NAME -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -z "$PREDICTOR_POD" ]; then
+          echo "ERROR: Could not find vLLM predictor pod for $MODEL_NAME in $NAMESPACE"
+          exit 1
+        fi
+        echo "Using tokenizer from pod: $PREDICTOR_POD"
+
+        cat > /tmp/gen_prompt.py << 'PYEOF'
+        import sys
+        import random
+        from transformers import AutoTokenizer
+
+        target_tokens = int(sys.argv[1])
+        tokenizer = AutoTokenizer.from_pretrained("/mnt/models")
+        rng = random.Random(42)
+
+        words = (
+            "the quick brown fox jumps over a lazy dog near the river bank "
+            "while clouds drift across the open sky and birds sing from tall trees "
+            "in the distance mountains rise above green valleys where streams flow "
+            "through ancient forests filled with wildlife and natural beauty "
+            "the sun casts long shadows across meadows of wildflowers swaying gently "
+            "in the warm breeze as butterflies dance between colorful blossoms "
+            "and bees gather nectar from each delicate petal throughout the garden "
+            "children play in the park beside the old stone bridge that crosses "
+            "the winding creek where fish swim beneath the clear water surface "
+            "farmers tend their fields of golden wheat stretching toward the horizon"
+        ).split()
+
+        text = ""
+        while len(tokenizer.encode(text)) < target_tokens:
+            chunk = " ".join(rng.choices(words, k=200))
+            text += " " + chunk
+
+        token_ids = tokenizer.encode(text)[:target_tokens]
+        prompt = tokenizer.decode(token_ids, skip_special_tokens=True)
+        actual = len(tokenizer.encode(prompt))
+        print(f"TARGET_TOKENS={target_tokens}", file=sys.stderr)
+        print(f"ACTUAL_TOKENS={actual}", file=sys.stderr)
+        print(prompt)
+        PYEOF
+
+        oc cp /tmp/gen_prompt.py $NAMESPACE/$PREDICTOR_POD:/tmp/gen_prompt.py
+        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompt.py $INPUT_TOKENS > "$PROMPT_FILE"
+
+        CHAR_COUNT=$(wc -c < "$PROMPT_FILE" | tr -d ' ')
+        echo "Prompt written to workspace: ${CHAR_COUNT} chars"
+        echo "Target: ${INPUT_TOKENS} tokens"

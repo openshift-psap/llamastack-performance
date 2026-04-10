@@ -24,10 +24,13 @@ rules:
   - apiGroups: ["serving.kserve.io"]
     resources: ["inferenceservices", "servingruntimes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # For checking pod status
+  # For checking pod status and exec (generate-prompt uses oc exec/cp into vLLM pod)
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
   # For metrics and HPA
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods"]

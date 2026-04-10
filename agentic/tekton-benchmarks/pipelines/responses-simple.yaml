@@ -96,6 +96,23 @@ spec:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
 
+    # Stage 1b: Generate tokenizer-based prompt (runs after vLLM is ready)
+    - name: generate-prompt
+      taskRef:
+        name: generate-prompt
+      runAfter:
+        - deploy-vllm
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+
     # Stage 2: Deploy LlamaStack
     - name: deploy-llamastack
       taskRef:
@@ -119,6 +136,7 @@ spec:
       runAfter:
         - deploy-llamastack
         - generate-configmap
+        - generate-prompt
       workspaces:
         - name: results
           workspace: results
