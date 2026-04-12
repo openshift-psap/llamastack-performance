@@ -137,7 +137,11 @@ class ResponsesSimpleUser(HttpUser):
     @task
     def call_responses_simple(self):
         if ResponsesSimpleUser._prompts:
-            prompt = random.choice(ResponsesSimpleUser._prompts)
+            with _user_counter_lock:
+                global _user_counter
+                idx = _user_counter
+                _user_counter += 1
+            prompt = ResponsesSimpleUser._prompts[idx % len(ResponsesSimpleUser._prompts)]
         else:
             prompt = self.default_prompt
         payload = {
@@ -191,7 +195,11 @@ class ChatCompletionsUser(HttpUser):
     @task
     def call_chat_completions(self):
         if ChatCompletionsUser._prompts:
-            prompt = random.choice(ChatCompletionsUser._prompts)
+            with _user_counter_lock:
+                global _user_counter
+                idx = _user_counter
+                _user_counter += 1
+            prompt = ChatCompletionsUser._prompts[idx % len(ChatCompletionsUser._prompts)]
         else:
             prompt = self.default_prompt
         payload = {

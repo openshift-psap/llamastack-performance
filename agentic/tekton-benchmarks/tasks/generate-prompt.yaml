@@ -26,7 +26,7 @@ spec:
       type: string
       default: "0"
     - name: USERS
-      description: "Number of unique prompts to generate (one per Locust user)"
+      description: "Number of concurrent users (prompts generated = max(USERS*3, 1000) for cache diversity)"
       type: string
       default: "1"
   workspaces:
@@ -62,52 +62,56 @@ spec:
         fi
         echo "Using tokenizer from pod: $PREDICTOR_POD"
 
+        # Generate at least max(USERS*3, 1000) prompts so Locust can iterate
+        # through them without repeating quickly, defeating vLLM prefix cache.
+        NUM_PROMPTS=$(python3 -c "print(max(int('$USERS') * 3, 1000))")
+        echo "Will generate $NUM_PROMPTS unique prompts"
+
         cat > /tmp/gen_prompts.py << 'PYEOF'
         import sys
         import json
         import random
+        import string
         from transformers import AutoTokenizer
 
         target_tokens = int(sys.argv[1])
         num_prompts = int(sys.argv[2])
         tokenizer = AutoTokenizer.from_pretrained("/mnt/models")
 
-        words = (
-            "the quick brown fox jumps over a lazy dog near the river bank "
-            "while clouds drift across the open sky and birds sing from tall trees "
-            "in the distance mountains rise above green valleys where streams flow "
-            "through ancient forests filled with wildlife and natural beauty "
-            "the sun casts long shadows across meadows of wildflowers swaying gently "
-            "in the warm breeze as butterflies dance between colorful blossoms "
-            "and bees gather nectar from each delicate petal throughout the garden "
-            "children play in the park beside the old stone bridge that crosses "
-            "the winding creek where fish swim beneath the clear water surface "
-            "farmers tend their fields of golden wheat stretching toward the horizon"
-        ).split()
+        # Build a large vocabulary from the tokenizer to maximize diversity.
+        # Sample token IDs directly and decode — each prompt is a unique
+        # sequence of tokens that shares minimal prefixes with others.
+        vocab_size = tokenizer.vocab_size
+        # Exclude special tokens and very short tokens
+        valid_ids = [
+            i for i in range(vocab_size)
+            if len(tokenizer.decode([i]).strip()) > 1
+            and tokenizer.decode([i]).strip() not in tokenizer.all_special_tokens
+        ]
 
         for i in range(num_prompts):
-            rng = random.Random(42 + i)
-            text = ""
-            while len(tokenizer.encode(text)) < target_tokens:
-                chunk = " ".join(rng.choices(words, k=200))
-                text += " " + chunk
-
-            token_ids = tokenizer.encode(text)[:target_tokens]
-            prompt = tokenizer.decode(token_ids, skip_special_tokens=True)
+            rng = random.Random(i)
+            sampled_ids = rng.choices(valid_ids, k=target_tokens)
+            prompt = tokenizer.decode(sampled_ids, skip_special_tokens=True)
+            # Re-encode to get actual token count and trim if needed
+            actual_ids = tokenizer.encode(prompt)[:target_tokens]
+            prompt = tokenizer.decode(actual_ids, skip_special_tokens=True)
             actual = len(tokenizer.encode(prompt))
             print(json.dumps({"index": i, "tokens": actual, "prompt": prompt}))
-            print(f"  prompt[{i}]: {actual} tokens", file=sys.stderr)
+            if i < 5 or i % 100 == 0:
+                print(f"  prompt[{i}]: {actual} tokens", file=sys.stderr)
 
         print(f"Generated {num_prompts} prompts, each ~{target_tokens} tokens", file=sys.stderr)
         PYEOF
 
         oc cp /tmp/gen_prompts.py $NAMESPACE/$PREDICTOR_POD:/tmp/gen_prompts.py
-        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompts.py $INPUT_TOKENS $USERS > "$PROMPTS_JSONL"
+        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompts.py $INPUT_TOKENS $NUM_PROMPTS > "$PROMPTS_JSONL"
 
         PROMPT_COUNT=$(wc -l < "$PROMPTS_JSONL" | tr -d ' ')
-        echo "Generated ${PROMPT_COUNT} prompts to ${PROMPTS_JSONL}"
+        FILE_SIZE=$(du -h "$PROMPTS_JSONL" | cut -f1)
+        echo "Generated ${PROMPT_COUNT} prompts to ${PROMPTS_JSONL} (${FILE_SIZE})"
 
         # Write first prompt to synthetic_prompt.txt for backward compatibility
         head -1 "$PROMPTS_JSONL" | python3 -c "import sys,json; print(json.load(sys.stdin)['prompt'])" > "$PROMPT_FILE"
         echo "First prompt also written to synthetic_prompt.txt"
-        echo "Target: ${INPUT_TOKENS} tokens x ${USERS} users"
+        echo "Target: ${INPUT_TOKENS} tokens x ${PROMPT_COUNT} prompts (${USERS} users)"
