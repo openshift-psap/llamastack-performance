@@ -119,10 +119,8 @@ class ResponsesSimpleUser(HttpUser):
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
-            payload["extra_body"] = {
-                "ignore_eos": True,
-                "stop_token_ids": [],
-            }
+            payload["ignore_eos"] = True
+            payload["stop_token_ids"] = []
 
         with self.client.post(
             "/v1/responses",
