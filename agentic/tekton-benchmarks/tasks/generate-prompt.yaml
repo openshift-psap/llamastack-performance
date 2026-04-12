@@ -26,9 +26,13 @@ spec:
       type: string
       default: "0"
     - name: USERS
-      description: "Number of concurrent users (prompts generated = max(USERS*3, 1000) for cache diversity)"
+      description: "Number of concurrent Locust users"
       type: string
       default: "1"
+    - name: RUN_TIME_SECONDS
+      description: "Test duration in seconds (used to calculate prompt pool size)"
+      type: string
+      default: "60"
   workspaces:
     - name: results
       description: Shared workspace where the generated prompts are written
@@ -51,8 +55,11 @@ spec:
           exit 0
         fi
 
+        RUN_TIME_SECONDS="$(params.RUN_TIME_SECONDS)"
+
         echo "=============================================="
-        echo "Generating ${USERS} synthetic prompts: ${INPUT_TOKENS} tokens each"
+        echo "Generating synthetic prompts: ${INPUT_TOKENS} tokens each"
+        echo "Users: ${USERS}, Test duration: ${RUN_TIME_SECONDS}s"
         echo "=============================================="
 
         PREDICTOR_POD=$(oc get pod -n $NAMESPACE -l serving.kserve.io/inferenceservice=$MODEL_NAME -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -62,9 +69,10 @@ spec:
         fi
         echo "Using tokenizer from pod: $PREDICTOR_POD"
 
-        # Generate at least max(USERS*3, 1000) prompts so Locust can iterate
-        # through them without repeating quickly, defeating vLLM prefix cache.
-        NUM_PROMPTS=$(python3 -c "print(max(int('$USERS') * 3, 1000))")
+        # Calculate prompt pool size: USERS * RUN_TIME / 2 (avg wait_time)
+        # capped at 5000 to keep generation time reasonable (~60s).
+        # This ensures near-zero prompt repetition during the test.
+        NUM_PROMPTS=$(python3 -c "print(min(int(int('$USERS') * int('$RUN_TIME_SECONDS') / 2), 5000))")
         echo "Will generate $NUM_PROMPTS unique prompts"
 
         cat > /tmp/gen_prompts.py << 'PYEOF'

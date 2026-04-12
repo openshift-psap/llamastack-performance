@@ -114,6 +114,8 @@ spec:
           value: $(params.INPUT_TOKENS)
         - name: USERS
           value: $(params.USERS)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
 
     # Stage 2: Deploy LlamaStack
     - name: deploy-llamastack
