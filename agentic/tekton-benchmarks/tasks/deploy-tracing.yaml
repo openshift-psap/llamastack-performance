@@ -188,6 +188,27 @@ spec:
           type: ClusterIP
         ALIAS_EOF
 
+              # Create ServiceMonitor so OpenShift Prometheus scrapes OTel metrics
+              cat <<'SM_EOF' | oc apply -n $NAMESPACE -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: otel-collector-metrics
+        spec:
+          endpoints:
+            - port: prometheus
+              interval: 15s
+          selector:
+            matchLabels:
+              app: otel-collector
+          namespaceSelector:
+            matchNames:
+              - NAMESPACE_PLACEHOLDER
+        SM_EOF
+              # Patch the namespace placeholder
+              oc patch servicemonitor otel-collector-metrics -n $NAMESPACE --type=json \
+                -p="[{\"op\":\"replace\",\"path\":\"/spec/namespaceSelector/matchNames/0\",\"value\":\"$NAMESPACE\"}]"
+
               echo "OTel Collector ready (Operator): $DEPLOY_NAME"
               exit 0
             fi
@@ -308,4 +329,23 @@ spec:
         SVC_EOF
 
         oc wait --for=condition=available deployment/otel-collector -n $NAMESPACE --timeout=120s
+
+        # Create ServiceMonitor so OpenShift Prometheus scrapes OTel metrics
+        cat <<SM_EOF | oc apply -n $NAMESPACE -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: otel-collector-metrics
+        spec:
+          endpoints:
+            - port: prometheus
+              interval: 15s
+          selector:
+            matchLabels:
+              app: otel-collector
+          namespaceSelector:
+            matchNames:
+              - $NAMESPACE
+        SM_EOF
+
         echo "OTel Collector ready (manual fallback)"
