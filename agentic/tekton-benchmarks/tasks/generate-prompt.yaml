@@ -5,10 +5,12 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Generate a synthetic prompt with an exact token count using the deployed
+    Generate synthetic prompts with an exact token count using the deployed
     model's tokenizer. Execs into the vLLM pod to access the tokenizer at
-    /mnt/models, generates Faker text, encodes/truncates to the target token
-    count, and writes the result to the shared workspace for Locust to use.
+    /mnt/models, generates random text with unique seeds per prompt,
+    encodes/truncates to the target token count, and writes the results to
+    the shared workspace as a JSONL file (one prompt per line) for Locust.
+    Also writes synthetic_prompt.txt with the first prompt for backward compat.
     Skipped when INPUT_TOKENS is 0 (Locust uses the PROMPT param as-is).
   params:
     - name: NAMESPACE
@@ -23,9 +25,13 @@ spec:
       description: "Target prompt length in tokens (0 = skip generation)"
       type: string
       default: "0"
+    - name: USERS
+      description: "Number of unique prompts to generate (one per Locust user)"
+      type: string
+      default: "1"
   workspaces:
     - name: results
-      description: Shared workspace where the generated prompt is written
+      description: Shared workspace where the generated prompts are written
   steps:
     - name: generate
       image: quay.io/openshift/origin-cli:latest
@@ -34,8 +40,10 @@ spec:
         set -e
 
         INPUT_TOKENS="$(params.INPUT_TOKENS)"
+        USERS="$(params.USERS)"
         NAMESPACE="$(params.NAMESPACE)"
         MODEL_NAME="$(params.MODEL_NAME)"
+        PROMPTS_JSONL="$(workspaces.results.path)/synthetic_prompts.jsonl"
         PROMPT_FILE="$(workspaces.results.path)/synthetic_prompt.txt"
 
         if [ "$INPUT_TOKENS" -eq 0 ] 2>/dev/null; then
@@ -44,7 +52,7 @@ spec:
         fi
 
         echo "=============================================="
-        echo "Generating synthetic prompt: ${INPUT_TOKENS} tokens"
+        echo "Generating ${USERS} synthetic prompts: ${INPUT_TOKENS} tokens each"
         echo "=============================================="
 
         PREDICTOR_POD=$(oc get pod -n $NAMESPACE -l serving.kserve.io/inferenceservice=$MODEL_NAME -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -54,14 +62,15 @@ spec:
         fi
         echo "Using tokenizer from pod: $PREDICTOR_POD"
 
-        cat > /tmp/gen_prompt.py << 'PYEOF'
+        cat > /tmp/gen_prompts.py << 'PYEOF'
         import sys
+        import json
         import random
         from transformers import AutoTokenizer
 
         target_tokens = int(sys.argv[1])
+        num_prompts = int(sys.argv[2])
         tokenizer = AutoTokenizer.from_pretrained("/mnt/models")
-        rng = random.Random(42)
 
         words = (
             "the quick brown fox jumps over a lazy dog near the river bank "
@@ -76,22 +85,29 @@ spec:
             "farmers tend their fields of golden wheat stretching toward the horizon"
         ).split()
 
-        text = ""
-        while len(tokenizer.encode(text)) < target_tokens:
-            chunk = " ".join(rng.choices(words, k=200))
-            text += " " + chunk
+        for i in range(num_prompts):
+            rng = random.Random(42 + i)
+            text = ""
+            while len(tokenizer.encode(text)) < target_tokens:
+                chunk = " ".join(rng.choices(words, k=200))
+                text += " " + chunk
 
-        token_ids = tokenizer.encode(text)[:target_tokens]
-        prompt = tokenizer.decode(token_ids, skip_special_tokens=True)
-        actual = len(tokenizer.encode(prompt))
-        print(f"TARGET_TOKENS={target_tokens}", file=sys.stderr)
-        print(f"ACTUAL_TOKENS={actual}", file=sys.stderr)
-        print(prompt)
+            token_ids = tokenizer.encode(text)[:target_tokens]
+            prompt = tokenizer.decode(token_ids, skip_special_tokens=True)
+            actual = len(tokenizer.encode(prompt))
+            print(json.dumps({"index": i, "tokens": actual, "prompt": prompt}))
+            print(f"  prompt[{i}]: {actual} tokens", file=sys.stderr)
+
+        print(f"Generated {num_prompts} prompts, each ~{target_tokens} tokens", file=sys.stderr)
         PYEOF
 
-        oc cp /tmp/gen_prompt.py $NAMESPACE/$PREDICTOR_POD:/tmp/gen_prompt.py
-        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompt.py $INPUT_TOKENS > "$PROMPT_FILE"
+        oc cp /tmp/gen_prompts.py $NAMESPACE/$PREDICTOR_POD:/tmp/gen_prompts.py
+        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompts.py $INPUT_TOKENS $USERS > "$PROMPTS_JSONL"
 
-        CHAR_COUNT=$(wc -c < "$PROMPT_FILE" | tr -d ' ')
-        echo "Prompt written to workspace: ${CHAR_COUNT} chars"
-        echo "Target: ${INPUT_TOKENS} tokens"
+        PROMPT_COUNT=$(wc -l < "$PROMPTS_JSONL" | tr -d ' ')
+        echo "Generated ${PROMPT_COUNT} prompts to ${PROMPTS_JSONL}"
+
+        # Write first prompt to synthetic_prompt.txt for backward compatibility
+        head -1 "$PROMPTS_JSONL" | python3 -c "import sys,json; print(json.load(sys.stdin)['prompt'])" > "$PROMPT_FILE"
+        echo "First prompt also written to synthetic_prompt.txt"
+        echo "Target: ${INPUT_TOKENS} tokens x ${USERS} users"

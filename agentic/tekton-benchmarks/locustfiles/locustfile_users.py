@@ -7,44 +7,66 @@ All classes are abstract by default — only the selected one is activated.
 
 Token profile control (ChatCompletionsUser and ResponsesSimpleUser):
     INPUT_TOKENS:  Target input prompt length in tokens (0 = use PROMPT as-is).
-                   When > 0, the generate-prompt pipeline task creates an exact
-                   token-count prompt using the model's tokenizer and writes it
-                   to synthetic_prompt.txt in the workspace.
+                   When > 0, the generate-prompt pipeline task creates unique
+                   prompts per user in synthetic_prompts.jsonl (one per line).
     OUTPUT_TOKENS: Exact output tokens per request (0 = no limit, model decides).
                    When > 0, sends max_output_tokens to LlamaStack and passes
                    ignore_eos/stop_token_ids via extra_body to force vLLM to
                    generate exactly this many tokens without stopping at EOS.
 """
 import os
+import sys
 import json
+import threading
 from pathlib import Path
 from locust import HttpUser, task, between
 
 
+SYNTHETIC_PROMPTS_FILENAME = "synthetic_prompts.jsonl"
 SYNTHETIC_PROMPT_FILENAME = "synthetic_prompt.txt"
 
-import sys
+_user_counter = 0
+_user_counter_lock = threading.Lock()
+
 print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
 
 
-def _load_prompt():
-    """Load the prompt, preferring a tokenizer-generated file from the workspace."""
-    import sys
+def _load_prompts():
+    """Load all prompts from JSONL, falling back to single prompt file, then env var."""
     output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "")
-    print(f"[prompt-loader] LOCUST_OUTPUT_DIR={output_dir!r}, INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}", file=sys.stderr, flush=True)
+
     if output_dir:
-        prompt_file = Path(output_dir) / SYNTHETIC_PROMPT_FILENAME
-        exists = prompt_file.exists()
-        print(f"[prompt-loader] Checking {prompt_file} exists={exists}", file=sys.stderr, flush=True)
-        if exists:
-            prompt = prompt_file.read_text().strip()
+        jsonl_file = Path(output_dir) / SYNTHETIC_PROMPTS_FILENAME
+        if jsonl_file.exists():
+            prompts = []
+            for line in jsonl_file.read_text().strip().split("\n"):
+                if line.strip():
+                    prompts.append(json.loads(line)["prompt"])
+            if prompts:
+                print(f"[prompt-loader] Loaded {len(prompts)} unique prompts from {jsonl_file}", file=sys.stderr, flush=True)
+                return prompts
+
+        txt_file = Path(output_dir) / SYNTHETIC_PROMPT_FILENAME
+        if txt_file.exists():
+            prompt = txt_file.read_text().strip()
             if prompt:
-                print(f"[prompt-loader] Loaded synthetic prompt: {len(prompt)} chars", file=sys.stderr, flush=True)
-                return prompt
+                print(f"[prompt-loader] Loaded single prompt from {txt_file}: {len(prompt)} chars", file=sys.stderr, flush=True)
+                return [prompt]
 
     fallback = os.environ.get("PROMPT", "What is the capital of France?")
     print(f"[prompt-loader] Using PROMPT env var fallback: {len(fallback)} chars", file=sys.stderr, flush=True)
-    return fallback
+    return [fallback]
+
+
+def _get_user_prompt(prompts):
+    """Assign a unique prompt to each user via round-robin."""
+    global _user_counter
+    with _user_counter_lock:
+        idx = _user_counter
+        _user_counter += 1
+    prompt = prompts[idx % len(prompts)]
+    print(f"[prompt-loader] User {idx} assigned prompt {idx % len(prompts)}/{len(prompts)} ({len(prompt)} chars)", file=sys.stderr, flush=True)
+    return prompt
 
 
 class ResponsesMCPUser(HttpUser):
@@ -92,24 +114,26 @@ class ResponsesMCPUser(HttpUser):
 class ResponsesSimpleUser(HttpUser):
     """Responses API without tools — measures LlamaStack overhead.
 
-    When INPUT_TOKENS > 0, reads the tokenizer-generated prompt from the workspace.
+    When INPUT_TOKENS > 0, each user gets a unique prompt from synthetic_prompts.jsonl.
     When OUTPUT_TOKENS > 0, sets max_output_tokens and passes ignore_eos + stop_token_ids
     via extra_body so LlamaStack forwards them to vLLM's chat completion call.
     """
     wait_time = between(1, 3)
     abstract = True
+    _prompts = None
 
     def on_start(self):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
         self.input_tokens = int(os.environ.get("INPUT_TOKENS", "0"))
         self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
-        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}", file=sys.stderr, flush=True)
 
         if self.input_tokens > 0:
-            self.prompt = _load_prompt()
+            if ResponsesSimpleUser._prompts is None:
+                ResponsesSimpleUser._prompts = _load_prompts()
+            self.prompt = _get_user_prompt(ResponsesSimpleUser._prompts)
         else:
             self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
-        print(f"[ResponsesSimpleUser] prompt length: {len(self.prompt)} chars", file=sys.stderr, flush=True)
+        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}, prompt_len={len(self.prompt)}", file=sys.stderr, flush=True)
 
     @task
     def call_responses_simple(self):
@@ -144,11 +168,12 @@ class ResponsesSimpleUser(HttpUser):
 class ChatCompletionsUser(HttpUser):
     """Chat Completions API — works against both vLLM direct and LlamaStack.
 
-    When INPUT_TOKENS > 0, reads the tokenizer-generated prompt from the workspace.
+    When INPUT_TOKENS > 0, each user gets a unique prompt from synthetic_prompts.jsonl.
     When OUTPUT_TOKENS > 0, forces exact output length via ignore_eos and stop=null.
     """
     wait_time = between(1, 3)
     abstract = True
+    _prompts = None
 
     def on_start(self):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
@@ -156,7 +181,9 @@ class ChatCompletionsUser(HttpUser):
         self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
 
         if self.input_tokens > 0:
-            self.prompt = _load_prompt()
+            if ChatCompletionsUser._prompts is None:
+                ChatCompletionsUser._prompts = _load_prompts()
+            self.prompt = _get_user_prompt(ChatCompletionsUser._prompts)
         else:
             self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
 
