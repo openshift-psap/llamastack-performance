@@ -45,6 +45,21 @@ rules:
   - apiGroups: ["opentelemetry.io"]
     resources: ["opentelemetrycollectors"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For Tempo Operator CR (flush-tempo step)
+  - apiGroups: ["tempo.grafana.com"]
+    resources: ["tempomonolithics"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For Tempo OpenShift tenancy mode (requires tokenreview)
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  # For ServiceMonitor creation (OTel metrics scraping)
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
