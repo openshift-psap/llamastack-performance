@@ -14,84 +14,90 @@ spec:
       description: Target URL to test
       type: string
     - name: USERS
+      default: "10"
       description: Number of concurrent users
       type: string
-      default: "10"
     - name: SPAWN_RATE
+      default: "1"
       description: Users to spawn per second
       type: string
-      default: "1"
     - name: RUN_TIME_SECONDS
+      default: "60"
       description: Test duration in seconds
       type: string
-      default: "60"
     - name: MCP_SERVER
+      default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
       description: MCP server URL for tool calling
       type: string
-      default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
     - name: MODEL
+      default: "vllm-inference/llama-32-3b-instruct"
       description: Model name to use
       type: string
-      default: "vllm-inference/llama-32-3b-instruct"
     - name: PROMPT
+      default: "What is Kubernetes?"
       description: Test prompt
       type: string
-      default: "What is Kubernetes?"
     - name: LOAD_SHAPE
+      default: "steady"
       description: "Load shape: steady | spike | realistic | custom"
       type: string
-      default: "steady"
     - name: LOCUST_IMAGE
+      default: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
       description: Locust container image
       type: string
-      default: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
     - name: CUSTOM_STAGES
+      default: "[]"
       description: JSON array of stages for custom load shape
       type: string
-      default: "[]"
     - name: EXTRA_ENV
-      description: "Additional env vars for shapes (KEY=VALUE per line)"
-      type: string
       default: ""
+      description: Additional env vars for shapes (KEY=VALUE per line)
+      type: string
     - name: USER_CLASS
+      default: "ResponsesMCPUser"
       description: "User class: ResponsesMCPUser | ResponsesSimpleUser | ChatCompletionsUser"
       type: string
-      default: "ResponsesMCPUser"
     - name: NAMESPACE
+      default: "llamastack-bench"
       description: Namespace where LlamaStack is deployed (for HPA scraper)
       type: string
-      default: "llamastack-bench"
     - name: DISTRIBUTION_NAME
+      default: "llamastack-benchmark"
       description: LlamaStackDistribution name (for HPA scraper pod filter)
       type: string
-      default: "llamastack-benchmark"
     - name: HPA_POST_TEST_SECONDS
+      default: "30"
       description: Seconds to continue scraping HPA metrics after test ends
       type: string
-      default: "30"
     - name: POSTGRES_METRICS_HOST
-      description: "Hostname for postgres-exporter metrics (port 9187)"
-      type: string
       default: "postgres"
-    - name: VLLM_METRICS_HOST
-      description: "Hostname for vLLM /metrics endpoint (port 8080)"
+      description: Hostname for postgres-exporter metrics (port 9187)
       type: string
+    - name: VLLM_METRICS_HOST
       default: ""
+      description: Hostname for vLLM /metrics endpoint (port 8080)
+      type: string
+    - name: GRAFANA_URL
+      default: "http://grafana.llamastack-monitoring.svc:3000"
+      description: Grafana URL for posting test annotations
+      type: string
     - name: INPUT_TOKENS
+      default: "0"
       description: "Target input prompt length in tokens (0 = use PROMPT as-is)"
       type: string
-      default: "0"
     - name: OUTPUT_TOKENS
-      description: "Max output tokens per request (0 = no limit)"
-      type: string
       default: "0"
-    - name: GRAFANA_URL
-      description: "Grafana URL for posting test annotations"
+      description: "Target output tokens per request (0 = no limit)"
       type: string
-      default: "http://grafana.llamastack-monitoring.svc:3000"
   workspaces:
     - name: results
       description: Shared workspace for test result files (PVC-backed)
+  volumes:
+    - name: locustfiles
+      configMap:
+        name: locustfiles
+    - name: shared
+      emptyDir: {}
   steps:
     - name: setup-and-run
       image: $(params.LOCUST_IMAGE)
@@ -114,14 +120,19 @@ spec:
           value: $(params.CUSTOM_STAGES)
         - name: USER_CLASS
           value: $(params.USER_CLASS)
+        - name: LOCUST_OUTPUT_DIR
+          value: $(workspaces.results.path)
+        - name: HPA_POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
         - name: INPUT_TOKENS
           value: $(params.INPUT_TOKENS)
         - name: OUTPUT_TOKENS
           value: $(params.OUTPUT_TOKENS)
-        - name: LOCUST_OUTPUT_DIR
-          value: "$(workspaces.results.path)"
-        - name: HPA_POST_TEST_SECONDS
-          value: $(params.HPA_POST_TEST_SECONDS)
+      volumeMounts:
+        - mountPath: /configmap
+          name: locustfiles
+        - mountPath: /shared
+          name: shared
       script: |
         #!/bin/bash
         set -e
@@ -138,6 +149,8 @@ spec:
         echo "Model: $MODEL"
         echo "Load Shape: $LOAD_SHAPE"
         echo "Output Dir: $LOCUST_OUTPUT_DIR"
+        echo "Input Tokens: $INPUT_TOKENS"
+        echo "Output Tokens: $OUTPUT_TOKENS"
         echo "=============================================="
 
         # Create directory structure from ConfigMap
@@ -156,6 +169,11 @@ spec:
 
         echo "Locustfiles setup complete:"
         find /tmp/locustfiles -type f
+        echo ""
+
+        # Show workspace contents (verify synthetic_prompt.txt is present)
+        echo "Workspace contents:"
+        ls -la "$LOCUST_OUTPUT_DIR/" 2>/dev/null || echo "(empty)"
         echo ""
 
         # Export extra environment variables (shape-specific params)
@@ -257,11 +275,6 @@ spec:
         echo ""
         echo "Result files:"
         ls -la "$LOCUST_OUTPUT_DIR/"
-      volumeMounts:
-        - name: locustfiles
-          mountPath: /configmap
-        - name: shared
-          mountPath: /shared
   sidecars:
     - name: hpa-metrics-scraper
       image: nicolaka/netshoot:latest
@@ -272,6 +285,9 @@ spec:
           value: $(params.HPA_POST_TEST_SECONDS)
         - name: DISTRIBUTION_NAME
           value: $(params.DISTRIBUTION_NAME)
+      volumeMounts:
+        - mountPath: /shared
+          name: shared
       script: |
         #!/bin/bash
         HPA_FILE="/shared/hpa-metrics.jsonl"
@@ -324,9 +340,6 @@ spec:
 
           sleep 1
         done
-      volumeMounts:
-        - name: shared
-          mountPath: /shared
     - name: prometheus-scraper
       image: nicolaka/netshoot:latest
       env:
@@ -338,6 +351,9 @@ spec:
           value: $(params.POSTGRES_METRICS_HOST)
         - name: VLLM_HOST
           value: $(params.VLLM_METRICS_HOST)
+      volumeMounts:
+        - mountPath: /shared
+          name: shared
       script: |
         #!/bin/bash
         PROM_FILE="/shared/prometheus-metrics.jsonl"
@@ -422,12 +438,3 @@ spec:
 
           sleep 5
         done
-      volumeMounts:
-        - name: shared
-          mountPath: /shared
-  volumes:
-    - name: locustfiles
-      configMap:
-        name: locustfiles
-    - name: shared
-      emptyDir: {}

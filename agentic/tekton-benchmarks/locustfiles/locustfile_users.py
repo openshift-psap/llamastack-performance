@@ -11,8 +11,9 @@ Token profile control (ChatCompletionsUser and ResponsesSimpleUser):
                    token-count prompt using the model's tokenizer and writes it
                    to synthetic_prompt.txt in the workspace.
     OUTPUT_TOKENS: Exact output tokens per request (0 = no limit, model decides).
-                   When > 0, sends ignore_eos=true and stop=null to force vLLM
-                   to generate exactly this many tokens.
+                   When > 0, sends max_output_tokens to LlamaStack and passes
+                   ignore_eos/stop_token_ids via extra_body to force vLLM to
+                   generate exactly this many tokens without stopping at EOS.
 """
 import os
 import json
@@ -21,6 +22,9 @@ from locust import HttpUser, task, between
 
 
 SYNTHETIC_PROMPT_FILENAME = "synthetic_prompt.txt"
+
+import sys
+print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
 
 
 def _load_prompt():
@@ -89,7 +93,8 @@ class ResponsesSimpleUser(HttpUser):
     """Responses API without tools — measures LlamaStack overhead.
 
     When INPUT_TOKENS > 0, reads the tokenizer-generated prompt from the workspace.
-    When OUTPUT_TOKENS > 0, forces exact output length via ignore_eos and stop=null.
+    When OUTPUT_TOKENS > 0, sets max_output_tokens and passes ignore_eos + stop_token_ids
+    via extra_body so LlamaStack forwards them to vLLM's chat completion call.
     """
     wait_time = between(1, 3)
     abstract = True
@@ -98,11 +103,13 @@ class ResponsesSimpleUser(HttpUser):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
         self.input_tokens = int(os.environ.get("INPUT_TOKENS", "0"))
         self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
+        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}", file=sys.stderr, flush=True)
 
         if self.input_tokens > 0:
             self.prompt = _load_prompt()
         else:
             self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
+        print(f"[ResponsesSimpleUser] prompt length: {len(self.prompt)} chars", file=sys.stderr, flush=True)
 
     @task
     def call_responses_simple(self):
@@ -112,8 +119,10 @@ class ResponsesSimpleUser(HttpUser):
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
-            payload["stop"] = None
-            payload["ignore_eos"] = True
+            payload["extra_body"] = {
+                "ignore_eos": True,
+                "stop_token_ids": [],
+            }
 
         with self.client.post(
             "/v1/responses",
