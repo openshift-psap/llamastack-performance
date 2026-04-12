@@ -56,6 +56,24 @@ spec:
         echo "Waiting for PostgreSQL to be ready..."
         oc wait --for=condition=available deployment/postgres -n $(params.NAMESPACE) --timeout=120s
         
+        # Create ServiceMonitor so OpenShift Prometheus scrapes postgres-exporter metrics
+        cat <<SM_EOF | oc apply -n $(params.NAMESPACE) -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: postgres-exporter-metrics
+        spec:
+          endpoints:
+            - port: metrics
+              interval: 15s
+          selector:
+            matchLabels:
+              app: postgres
+          namespaceSelector:
+            matchNames:
+              - $(params.NAMESPACE)
+        SM_EOF
+
         echo ""
         echo "=============================================="
         echo "PostgreSQL deployed successfully!"
