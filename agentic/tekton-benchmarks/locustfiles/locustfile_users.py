@@ -17,6 +17,7 @@ Token profile control (ChatCompletionsUser and ResponsesSimpleUser):
 import os
 import sys
 import json
+import random
 import threading
 from pathlib import Path
 from locust import HttpUser, task, between
@@ -114,7 +115,8 @@ class ResponsesMCPUser(HttpUser):
 class ResponsesSimpleUser(HttpUser):
     """Responses API without tools — measures LlamaStack overhead.
 
-    When INPUT_TOKENS > 0, each user gets a unique prompt from synthetic_prompts.jsonl.
+    When INPUT_TOKENS > 0, each request picks a random prompt from
+    synthetic_prompts.jsonl to avoid vLLM prefix cache hits.
     When OUTPUT_TOKENS > 0, sets max_output_tokens and passes ignore_eos + stop_token_ids
     via extra_body so LlamaStack forwards them to vLLM's chat completion call.
     """
@@ -126,20 +128,21 @@ class ResponsesSimpleUser(HttpUser):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
         self.input_tokens = int(os.environ.get("INPUT_TOKENS", "0"))
         self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
+        self.default_prompt = os.environ.get("PROMPT", "What is the capital of France?")
 
-        if self.input_tokens > 0:
-            if ResponsesSimpleUser._prompts is None:
-                ResponsesSimpleUser._prompts = _load_prompts()
-            self.prompt = _get_user_prompt(ResponsesSimpleUser._prompts)
-        else:
-            self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
-        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}, prompt_len={len(self.prompt)}", file=sys.stderr, flush=True)
+        if self.input_tokens > 0 and ResponsesSimpleUser._prompts is None:
+            ResponsesSimpleUser._prompts = _load_prompts()
+        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}, prompts_available={len(ResponsesSimpleUser._prompts) if ResponsesSimpleUser._prompts else 0}", file=sys.stderr, flush=True)
 
     @task
     def call_responses_simple(self):
+        if ResponsesSimpleUser._prompts:
+            prompt = random.choice(ResponsesSimpleUser._prompts)
+        else:
+            prompt = self.default_prompt
         payload = {
             "model": self.model,
-            "input": self.prompt
+            "input": prompt
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
@@ -168,7 +171,8 @@ class ResponsesSimpleUser(HttpUser):
 class ChatCompletionsUser(HttpUser):
     """Chat Completions API — works against both vLLM direct and LlamaStack.
 
-    When INPUT_TOKENS > 0, each user gets a unique prompt from synthetic_prompts.jsonl.
+    When INPUT_TOKENS > 0, each request picks a random prompt from
+    synthetic_prompts.jsonl to avoid vLLM prefix cache hits.
     When OUTPUT_TOKENS > 0, forces exact output length via ignore_eos and stop=null.
     """
     wait_time = between(1, 3)
@@ -179,20 +183,21 @@ class ChatCompletionsUser(HttpUser):
         self.model = os.environ.get("MODEL", "vllm-inference/llama-32-3b-instruct")
         self.input_tokens = int(os.environ.get("INPUT_TOKENS", "0"))
         self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
+        self.default_prompt = os.environ.get("PROMPT", "What is the capital of France?")
 
-        if self.input_tokens > 0:
-            if ChatCompletionsUser._prompts is None:
-                ChatCompletionsUser._prompts = _load_prompts()
-            self.prompt = _get_user_prompt(ChatCompletionsUser._prompts)
-        else:
-            self.prompt = os.environ.get("PROMPT", "What is the capital of France?")
+        if self.input_tokens > 0 and ChatCompletionsUser._prompts is None:
+            ChatCompletionsUser._prompts = _load_prompts()
 
     @task
     def call_chat_completions(self):
+        if ChatCompletionsUser._prompts:
+            prompt = random.choice(ChatCompletionsUser._prompts)
+        else:
+            prompt = self.default_prompt
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "user", "content": self.prompt}
+                {"role": "user", "content": prompt}
             ]
         }
         if self.output_tokens > 0:
