@@ -194,11 +194,16 @@ oc apply -f "$MANIFESTS_DIR/grafana-dashboard-gpu.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana-dashboard-llamastack-deep.yaml"
 oc apply -f "$MANIFESTS_DIR/grafana.yaml"
 
-# --- 8. Apply ServiceMonitors to benchmark namespace ---
+# --- 8. Apply ServiceMonitors to benchmark namespace (if it exists) ---
 echo ""
 echo "--- Applying ServiceMonitors ---"
-# Benchmark namespace ServiceMonitors (otel-collector, postgres, vllm)
-oc apply -f "$MANIFESTS_DIR/servicemonitors.yaml" -n "$BENCH_NAMESPACE"
+if oc get namespace "$BENCH_NAMESPACE" &>/dev/null; then
+  echo "Applying ServiceMonitors to $BENCH_NAMESPACE..."
+  oc apply -f "$MANIFESTS_DIR/servicemonitors.yaml" -n "$BENCH_NAMESPACE"
+else
+  echo "Namespace $BENCH_NAMESPACE does not exist yet — ServiceMonitors will be"
+  echo "created automatically by the pipeline tasks (deploy-tracing, deploy-postgres)."
+fi
 
 # DCGM ServiceMonitor (in nvidia-gpu-operator namespace, if it exists)
 if oc get namespace nvidia-gpu-operator &>/dev/null; then
