@@ -89,36 +89,38 @@ data:
         },
         {
           "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
-          "id": 300, "title": "Process Health (from OTel Collector)", "type": "row"
+          "id": 300, "title": "Container Resources (from OCP)", "type": "row"
         },
         {
-          "title": "CPU Utilization (OTel)", "type": "timeseries",
+          "title": "LlamaStack CPU Usage (cores)", "type": "timeseries",
           "gridPos": { "h": 7, "w": 8, "x": 0, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "process_cpu_utilization_ratio{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "CPU ratio" }],
-          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0 } },
+          "targets": [
+            { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\"llamastack-.*\", container!=\"\"}[1m])) by (pod)", "legendFormat": "{{pod}}" },
+            { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\"otel-collector-.*\", container!=\"\"}[1m])) by (pod)", "legendFormat": "{{pod}}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0 } },
           "id": 7
         },
         {
-          "title": "Memory Usage (OTel)", "type": "timeseries",
+          "title": "LlamaStack Memory Usage", "type": "timeseries",
           "gridPos": { "h": 7, "w": 8, "x": 8, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "process_memory_usage_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "RSS" },
-            { "expr": "process_memory_virtual_bytes{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "virtual" }
+            { "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\"llamastack-.*\", container!=\"\"}) by (pod)", "legendFormat": "{{pod}}" },
+            { "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\"otel-collector-.*\", container!=\"\"}) by (pod)", "legendFormat": "{{pod}}" }
           ],
           "fieldConfig": { "defaults": { "unit": "bytes" } },
           "id": 8
         },
         {
-          "title": "Threads & File Descriptors (OTel)", "type": "timeseries",
+          "title": "All Pods CPU Usage (cores)", "type": "timeseries",
           "gridPos": { "h": 7, "w": 8, "x": 16, "y": 27 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "process_thread_count{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "threads" },
-            { "expr": "process_open_file_descriptor_count{namespace=~\"$namespace\", service=\"otel-collector-collector\"}", "legendFormat": "open FDs" }
+            { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\"}[1m])) by (pod)", "legendFormat": "{{pod}}" }
           ],
-          "fieldConfig": { "defaults": { "unit": "short" } },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0 } },
           "id": 9
         },
         {
