@@ -83,31 +83,61 @@ spec:
         set -e
         RESULTS_DIR="$(workspaces.results.path)"
         NS="$(params.NAMESPACE)"
+        USER_CLASS="$(params.USER_CLASS)"
 
+        echo "Collecting cluster and component versions..."
+
+        # --- Cluster info (always collected) ---
         OCP_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}' 2>/dev/null || echo "unknown")
-
         RHOAI_VERSION=$(oc get csv -n redhat-ods-operator -o jsonpath='{.items[?(@.spec.displayName=="Red Hat OpenShift AI")].spec.version}' 2>/dev/null || echo "unknown")
 
-        LS_OPERATOR_VERSION=$(oc get csv -n llama-stack-k8s-operator-system -o jsonpath='{.items[?(@.spec.displayName)].spec.version}' 2>/dev/null || echo "unknown")
-        if [ "$LS_OPERATOR_VERSION" = "" ]; then
-          LS_OPERATOR_VERSION=$(oc get deployment -n llama-stack-k8s-operator-system -o jsonpath='{.items[0].spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+        MASTER_NODES=$(oc get nodes -l node-role.kubernetes.io/master --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        GPU_NODES=$(oc get nodes -l nvidia.com/gpu.present=true --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        GPU_PRODUCT=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].metadata.labels.nvidia\.com/gpu\.product}' 2>/dev/null || echo "unknown")
+        GPU_COUNT=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].status.capacity.nvidia\.com/gpu}' 2>/dev/null || echo "unknown")
+
+        # --- vLLM / RHAIIS info (always collected for any test type) ---
+        VLLM_IMAGE="unknown"
+        VLLM_ARGS="unknown"
+        ISVC=$(oc get inferenceservice -n $NS -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$ISVC" ]; then
+          VLLM_POD=$(oc get pod -n $NS -l serving.kserve.io/inferenceservice=$ISVC -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$VLLM_POD" ]; then
+            VLLM_IMAGE=$(oc get pod $VLLM_POD -n $NS -o jsonpath='{.spec.containers[?(@.name=="kserve-container")].image}' 2>/dev/null || echo "unknown")
+            VLLM_ARGS=$(oc get pod $VLLM_POD -n $NS -o jsonpath='{.spec.containers[?(@.name=="kserve-container")].args}' 2>/dev/null || echo "unknown")
+          fi
         fi
 
-        LS_IMAGE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
-
-        PG_IMAGE=$(oc get deployment postgres -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+        # --- LlamaStack info (only for LlamaStack tests) ---
+        LS_IMAGE="n/a"
+        LS_OPERATOR_VERSION="n/a"
+        PG_IMAGE="n/a"
+        if [ "$USER_CLASS" != "ChatCompletionsUser" ]; then
+          LS_OPERATOR_VERSION=$(oc get csv -n llama-stack-k8s-operator-system -o jsonpath='{.items[?(@.spec.displayName)].spec.version}' 2>/dev/null || echo "unknown")
+          [ -z "$LS_OPERATOR_VERSION" ] && LS_OPERATOR_VERSION="unknown"
+          LS_IMAGE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
+          PG_IMAGE=$(oc get deployment postgres -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+        fi
 
         cat > "$RESULTS_DIR/cluster_versions.json" <<VERSIONS_EOF
         {
           "openshift_version": "$OCP_VERSION",
           "openshift_ai_version": "$RHOAI_VERSION",
+          "cluster_master_nodes": "$MASTER_NODES",
+          "cluster_worker_nodes": "$WORKER_NODES",
+          "cluster_gpu_nodes": "$GPU_NODES",
+          "gpu_product": "$GPU_PRODUCT",
+          "gpu_count_per_node": "$GPU_COUNT",
+          "vllm_image": "$VLLM_IMAGE",
+          "vllm_args": "$VLLM_ARGS",
           "llamastack_operator_version": "$LS_OPERATOR_VERSION",
           "llamastack_image": "$LS_IMAGE",
           "postgres_image": "$PG_IMAGE"
         }
         VERSIONS_EOF
 
-        echo "Collected cluster versions:"
+        echo "Collected versions:"
         cat "$RESULTS_DIR/cluster_versions.json"
 
     - name: analyze-traces

@@ -45,6 +45,9 @@ def parse_params(param_list):
         if "=" in p:
             k, v = p.split("=", 1)
             params[k] = v
+    input_tokens = int(params.get("input_tokens", "0"))
+    if input_tokens > 0 and "prompt" in params:
+        params["prompt"] = f"(synthetic {input_tokens} tokens)"
     return params
 
 
