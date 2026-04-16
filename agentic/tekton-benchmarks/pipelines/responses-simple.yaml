@@ -56,7 +56,7 @@ spec:
       default: "tekton"
     - name: TEMPO_ENDPOINT
       type: string
-      default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+      default: "http://tempo-tracing-gateway.openshift-tempo-operator.svc.cluster.local:3200"
     - name: INPUT_TOKENS
       type: string
       default: "0"
