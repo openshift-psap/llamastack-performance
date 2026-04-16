@@ -24,6 +24,10 @@ spec:
       description: Namespace where vLLM is running (for cross-namespace reference)
       type: string
       default: ""
+    - name: MODEL_NAME
+      description: Name of the vLLM model/InferenceService (used to construct predictor service name)
+      type: string
+      default: "llama-32-3b-instruct"
     - name: SKIP_DEPLOY
       description: If "true", skips deployment
       type: string
@@ -54,17 +58,23 @@ spec:
         echo "Waiting for cleanup..."
         sleep 10
         
-        # Download and optionally patch manifest for cross-namespace vLLM
+        # Download and patch manifest with correct model predictor name
+        MODEL_PREDICTOR="$(params.MODEL_NAME)-predictor"
         VLLM_NS="$(params.VLLM_NAMESPACE)"
+        echo "Model predictor: $MODEL_PREDICTOR"
+
         if [ -n "$VLLM_NS" ] && [ "$VLLM_NS" != "$(params.NAMESPACE)" ]; then
           echo "Patching VLLM_URL for cross-namespace access (vLLM in $VLLM_NS)..."
           curl -sL $(params.MANIFEST_PATH) | \
-            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://llama-32-3b-instruct-predictor.$VLLM_NS.svc.cluster.local:80/v1|g" | \
+            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}.${VLLM_NS}.svc.cluster.local:80/v1|g" | \
+            sed "s|value: \"llama-32-3b-instruct\"|value: \"$(params.MODEL_NAME)\"|g" | \
             sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
             oc apply -f - -n $(params.NAMESPACE)
         else
           echo "Deploying LlamaStackDistribution..."
           curl -sL $(params.MANIFEST_PATH) | \
+            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}:80/v1|g" | \
+            sed "s|value: \"llama-32-3b-instruct\"|value: \"$(params.MODEL_NAME)\"|g" | \
             sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
             oc apply -f - -n $(params.NAMESPACE)
         fi

@@ -1,0 +1,34 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: query-prometheus
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Query Prometheus (thanos-querier) for vLLM inference, GPU, and cluster metrics
+    during the test window. Writes prometheus_query_results.json for the MLflow logger.
+    Designed for direct vLLM benchmarks where no trace analysis or Pushgateway is needed.
+  params:
+    - name: NAMESPACE
+      description: Benchmark namespace (for metric filtering)
+      type: string
+      default: "llamastack-bench"
+  workspaces:
+    - name: results
+      description: Shared workspace with test result files from run-locust
+  steps:
+    - name: query-prometheus
+      image: registry.access.redhat.com/ubi9/python-311:latest
+      script: |
+        #!/bin/bash
+        set -e
+        python3 /scripts/query_prometheus.py \
+          --results-dir "$(workspaces.results.path)" \
+          --namespace "$(params.NAMESPACE)"
+      volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+  volumes:
+    - name: scripts
+      configMap:
+        name: mlflow-scripts

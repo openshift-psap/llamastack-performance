@@ -6,7 +6,9 @@ metadata:
 spec:
   description: |
     Benchmark vLLM directly (no LlamaStack).
-    Deploys vLLM, runs Locust ChatCompletions test, logs to MLflow, cleans up.
+    Supports two deployment modes: OCI modelcar (deploy-vllm) or RHAIIS HF download (deploy-rhaiis).
+    Runs Locust ChatCompletions test, queries Prometheus for inference/GPU/cluster metrics,
+    logs everything to MLflow, cleans up.
   params:
     - name: NAMESPACE
       type: string
@@ -59,6 +61,21 @@ spec:
     - name: SKIP_CLEANUP
       type: string
       default: "false"
+    - name: SKIP_DEPLOY_VLLM
+      type: string
+      default: "false"
+    - name: SKIP_DEPLOY_RHAIIS
+      type: string
+      default: "true"
+    - name: PVC_NAME
+      type: string
+      default: "qwen3-vl-model-pvc"
+    - name: PVC_SIZE
+      type: string
+      default: "120Gi"
+    - name: DEPLOY_TIMEOUT
+      type: string
+      default: "900"
   workspaces:
     - name: results
   tasks:
@@ -74,13 +91,55 @@ spec:
           value: $(params.NAMESPACE)
         - name: MODEL_NAME
           value: $(params.MODEL_NAME)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_VLLM)
+
+    - name: deploy-rhaiis
+      taskRef:
+        name: deploy-rhaiis
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: PVC_NAME
+          value: $(params.PVC_NAME)
+        - name: PVC_SIZE
+          value: $(params.PVC_SIZE)
+        - name: DEPLOY_TIMEOUT
+          value: $(params.DEPLOY_TIMEOUT)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_RHAIIS)
+
+    - name: generate-prompt
+      taskRef:
+        name: generate-prompt
+      runAfter:
+        - deploy-vllm
+        - deploy-rhaiis
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: USERS
+          value: $(params.USERS)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
 
     - name: run-locust
       taskRef:
         name: run-locust
       runAfter:
         - deploy-vllm
+        - deploy-rhaiis
         - generate-configmap
+        - generate-prompt
       workspaces:
         - name: results
           workspace: results
@@ -115,12 +174,26 @@ spec:
           value: $(params.OUTPUT_TOKENS)
         - name: HPA_POST_TEST_SECONDS
           value: $(params.HPA_POST_TEST_SECONDS)
+        - name: VLLM_METRICS_HOST
+          value: "$(params.MODEL_NAME)-predictor"
+
+    - name: query-prometheus
+      taskRef:
+        name: query-prometheus
+      runAfter:
+        - run-locust
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
 
     - name: log-mlflow
       taskRef:
         name: log-mlflow
       runAfter:
-        - run-locust
+        - query-prometheus
       when:
         - input: $(params.ENABLE_MLFLOW)
           operator: in

@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: benchmark-vllm-direct-
+  generateName: benchmark-vllm-direct-rhaiis-
   namespace: tekton-llamastack
 spec:
   pipelineRef:
@@ -18,15 +18,15 @@ spec:
               storage: 1Gi
   params:
     - name: NAMESPACE
-      value: "vllm-direct-bench"
+      value: "llamastack-bench"
     - name: MODEL_NAME
-      value: "llama-32-3b-instruct"
+      value: "qwen3-vl-30b-a3b-instruct"
     - name: USERS
-      value: "100"
+      value: "10"
     - name: RUN_TIME_SECONDS
       value: "60"
     - name: MODEL
-      value: "llama-32-3b-instruct"
+      value: "qwen3-vl-30b-a3b-instruct"
     - name: PROMPT
       value: "What is the capital of France?"
     - name: LOAD_SHAPE
@@ -34,9 +34,15 @@ spec:
     - name: ENABLE_MLFLOW
       value: "true"
     - name: MLFLOW_EXPERIMENT
-      value: "llamastack-tekton-pipeline"
-    # OCI modelcar mode (default): deploy-vllm active, deploy-rhaiis skipped
+      value: "rhaiis-benchmarks"
+    # RHAIIS mode: deploy-vllm skipped, deploy-rhaiis active
     - name: SKIP_DEPLOY_VLLM
-      value: "false"
-    - name: SKIP_DEPLOY_RHAIIS
       value: "true"
+    - name: SKIP_DEPLOY_RHAIIS
+      value: "false"
+    - name: PVC_NAME
+      value: "qwen3-vl-model-pvc"
+    - name: PVC_SIZE
+      value: "120Gi"
+    - name: DEPLOY_TIMEOUT
+      value: "900"

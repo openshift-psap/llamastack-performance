@@ -1,0 +1,36 @@
+# Qwen3-VL-30B-A3B-Instruct InferenceService (2 GPUs)
+# Model downloaded by vLLM at startup via --model arg (HF public model)
+# PVC provides writable storage for model cache
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  annotations:
+    openshift.io/display-name: qwen3-vl-30b-a3b-instruct
+    serving.kserve.io/deploymentMode: RawDeployment
+    storage.kserve.io/readonly: "false"
+  labels:
+    networking.kserve.io/visibility: exposed
+    opendatahub.io/dashboard: "true"
+  name: qwen3-vl-30b-a3b-instruct
+spec:
+  predictor:
+    automountServiceAccountToken: false
+    minReplicas: 1
+    maxReplicas: 1
+    securityContext:
+      fsGroup: 1000
+      runAsUser: 1000
+    model:
+      modelFormat:
+        name: pytorch
+      name: ""
+      resources:
+        limits:
+          memory: 24Gi
+          nvidia.com/gpu: "2"
+        requests:
+          cpu: "2"
+          memory: 24Gi
+          nvidia.com/gpu: "2"
+      runtime: qwen3-vl-30b-a3b-instruct
+      storageUri: pvc://qwen3-vl-model-pvc

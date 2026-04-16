@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: benchmark-vllm-direct-
+  generateName: benchmark-responses-mcp-rhaiis-
   namespace: tekton-llamastack
 spec:
   pipelineRef:
-    name: vllm-direct-benchmark
+    name: responses-mcp-benchmark
   taskRunTemplate:
     serviceAccountName: tekton-deployer
   workspaces:
@@ -18,25 +18,31 @@ spec:
               storage: 1Gi
   params:
     - name: NAMESPACE
-      value: "vllm-direct-bench"
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
     - name: MODEL_NAME
-      value: "llama-32-3b-instruct"
+      value: "qwen3-vl-30b-a3b-instruct"
     - name: USERS
-      value: "100"
+      value: "10"
     - name: RUN_TIME_SECONDS
       value: "60"
     - name: MODEL
-      value: "llama-32-3b-instruct"
+      value: "vllm-inference/qwen3-vl-30b-a3b-instruct"
     - name: PROMPT
-      value: "What is the capital of France?"
+      value: "What is SDG and how does it work?"
     - name: LOAD_SHAPE
       value: "steady"
     - name: ENABLE_MLFLOW
       value: "true"
     - name: MLFLOW_EXPERIMENT
-      value: "llamastack-tekton-pipeline"
-    # OCI modelcar mode (default): deploy-vllm active, deploy-rhaiis skipped
+      value: "rhaiis-benchmarks"
+    # RHAIIS mode
     - name: SKIP_DEPLOY_VLLM
-      value: "false"
+      value: "true"
     - name: SKIP_DEPLOY_RHAIIS
+      value: "false"
+    - name: PVC_NAME
+      value: "qwen3-vl-model-pvc"
+    - name: SKIP_CLEANUP
       value: "true"

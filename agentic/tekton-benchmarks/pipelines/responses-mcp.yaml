@@ -6,7 +6,8 @@ metadata:
 spec:
   description: |
     Benchmark LlamaStack Responses API with MCP tool calling.
-    Deploys vLLM, PostgreSQL, MCP server, OTel, LlamaStack, runs Locust test, logs to MLflow, cleans up.
+    Supports two deployment modes: OCI modelcar (deploy-vllm) or RHAIIS HF download (deploy-rhaiis).
+    Deploys vLLM/RHAIIS, PostgreSQL, MCP server, OTel, LlamaStack, runs Locust test, logs to MLflow, cleans up.
   params:
     - name: NAMESPACE
       type: string
@@ -62,10 +63,24 @@ spec:
     - name: SKIP_CLEANUP
       type: string
       default: "false"
+    - name: SKIP_DEPLOY_VLLM
+      type: string
+      default: "false"
+    - name: SKIP_DEPLOY_RHAIIS
+      type: string
+      default: "true"
+    - name: PVC_NAME
+      type: string
+      default: "qwen3-vl-model-pvc"
+    - name: PVC_SIZE
+      type: string
+      default: "120Gi"
+    - name: DEPLOY_TIMEOUT
+      type: string
+      default: "900"
   workspaces:
     - name: results
   tasks:
-    # Stage 1: Parallel deployments + configmap generation
     - name: generate-configmap
       taskRef:
         name: generate-configmap
@@ -78,6 +93,25 @@ spec:
           value: $(params.NAMESPACE)
         - name: MODEL_NAME
           value: $(params.MODEL_NAME)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_VLLM)
+
+    - name: deploy-rhaiis
+      taskRef:
+        name: deploy-rhaiis
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: PVC_NAME
+          value: $(params.PVC_NAME)
+        - name: PVC_SIZE
+          value: $(params.PVC_SIZE)
+        - name: DEPLOY_TIMEOUT
+          value: $(params.DEPLOY_TIMEOUT)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_RHAIIS)
 
     - name: deploy-postgres
       taskRef:
@@ -102,12 +136,12 @@ spec:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
 
-    # Stage 2: Deploy LlamaStack
     - name: deploy-llamastack
       taskRef:
         name: deploy-llamastack
       runAfter:
         - deploy-vllm
+        - deploy-rhaiis
         - deploy-postgres
         - deploy-mcp-server
         - deploy-tracing
@@ -118,8 +152,9 @@ spec:
           value: $(params.DISTRIBUTION_NAME)
         - name: VLLM_NAMESPACE
           value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
 
-    # Stage 3: Run Locust test
     - name: run-locust
       taskRef:
         name: run-locust
@@ -159,7 +194,6 @@ spec:
         - name: HPA_POST_TEST_SECONDS
           value: $(params.HPA_POST_TEST_SECONDS)
 
-    # Stage 4: Log to MLflow (conditional)
     - name: log-mlflow
       taskRef:
         name: log-mlflow
@@ -204,7 +238,6 @@ spec:
         - name: CUSTOM_STAGES
           value: $(params.CUSTOM_STAGES)
 
-    # Stage 5: Cleanup
     - name: cleanup
       taskRef:
         name: cleanup
