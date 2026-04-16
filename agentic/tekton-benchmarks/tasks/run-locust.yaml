@@ -89,6 +89,10 @@ spec:
       default: "0"
       description: "Target output tokens per request (0 = no limit)"
       type: string
+    - name: WARMUP_SECONDS
+      default: "0"
+      description: "Seconds to wait before starting Locust (allows Prometheus to start scraping)"
+      type: string
   workspaces:
     - name: results
       description: Shared workspace for test result files (PVC-backed)
@@ -187,6 +191,22 @@ spec:
               echo "  $line"
             fi
           done <<< "$EXTRA_ENV_VALUE"
+          echo ""
+        fi
+
+        # Warmup: wait for Prometheus to discover and start scraping all targets
+        WARMUP=$(params.WARMUP_SECONDS)
+        if [ "$WARMUP" -gt 0 ] 2>/dev/null; then
+          echo "=============================================="
+          echo "Warmup: waiting ${WARMUP}s for Prometheus scraping to stabilize"
+          echo "=============================================="
+          ELAPSED=0
+          while [ $ELAPSED -lt $WARMUP ]; do
+            sleep 30
+            ELAPSED=$((ELAPSED + 30))
+            echo "  ${ELAPSED}s / ${WARMUP}s"
+          done
+          echo "Warmup complete, starting test."
           echo ""
         fi
 

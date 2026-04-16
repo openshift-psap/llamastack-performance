@@ -63,6 +63,9 @@ spec:
     - name: SKIP_CLEANUP
       type: string
       default: "false"
+    - name: WARMUP_SECONDS
+      type: string
+      default: "300"
     - name: SKIP_DEPLOY_VLLM
       type: string
       default: "false"
@@ -193,6 +196,8 @@ spec:
           value: $(params.DISTRIBUTION_NAME)
         - name: HPA_POST_TEST_SECONDS
           value: $(params.HPA_POST_TEST_SECONDS)
+        - name: WARMUP_SECONDS
+          value: $(params.WARMUP_SECONDS)
 
     - name: log-mlflow
       taskRef:

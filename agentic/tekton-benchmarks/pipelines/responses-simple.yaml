@@ -66,6 +66,9 @@ spec:
     - name: SKIP_CLEANUP
       type: string
       default: "false"
+    - name: WARMUP_SECONDS
+      type: string
+      default: "300"
     - name: SKIP_DEPLOY_VLLM
       type: string
       default: "false"
@@ -214,6 +217,8 @@ spec:
           value: $(params.INPUT_TOKENS)
         - name: OUTPUT_TOKENS
           value: $(params.OUTPUT_TOKENS)
+        - name: WARMUP_SECONDS
+          value: $(params.WARMUP_SECONDS)
 
     - name: push-to-prometheus
       taskRef:

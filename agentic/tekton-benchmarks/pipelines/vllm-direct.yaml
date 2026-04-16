@@ -61,6 +61,9 @@ spec:
     - name: SKIP_CLEANUP
       type: string
       default: "false"
+    - name: WARMUP_SECONDS
+      type: string
+      default: "300"
     - name: SKIP_DEPLOY_VLLM
       type: string
       default: "false"
@@ -176,6 +179,8 @@ spec:
           value: $(params.HPA_POST_TEST_SECONDS)
         - name: VLLM_METRICS_HOST
           value: "$(params.MODEL_NAME)-predictor"
+        - name: WARMUP_SECONDS
+          value: $(params.WARMUP_SECONDS)
 
     - name: query-prometheus
       taskRef:
