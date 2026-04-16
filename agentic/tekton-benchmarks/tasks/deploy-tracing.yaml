@@ -57,15 +57,11 @@ spec:
               http:
                 enabled: true
           multitenancy:
-            enabled: true
-            mode: openshift
-            authentication:
-            - tenantName: dev
-              tenantId: "1610b0c3-c509-4592-a256-a1871353dbfa"
+            enabled: false
           jaegerui:
             enabled: true
             route:
-              enabled: true
+              enabled: false
           queryFrontend:
             extraConfig:
               server:
@@ -139,7 +135,7 @@ spec:
                 send_batch_size: 1024
             exporters:
               otlp/tempo:
-                endpoint: tempo-tracing-gateway.openshift-tempo-operator.svc.cluster.local:4317
+                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
                 tls:
                   insecure: true
               prometheus:
@@ -264,7 +260,7 @@ spec:
                 send_batch_size: 1024
             exporters:
               otlp/tempo:
-                endpoint: tempo-tracing-gateway.openshift-tempo-operator.svc.cluster.local:4317
+                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
                 tls:
                   insecure: true
               prometheus:
