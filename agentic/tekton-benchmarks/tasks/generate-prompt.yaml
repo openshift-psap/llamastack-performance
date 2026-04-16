@@ -80,11 +80,31 @@ spec:
         import json
         import random
         import string
+        import os
+        import glob
         from transformers import AutoTokenizer
 
         target_tokens = int(sys.argv[1])
         num_prompts = int(sys.argv[2])
-        tokenizer = AutoTokenizer.from_pretrained("/mnt/models")
+
+        # Detect model path: OCI modelcar has files at /mnt/models, RHAIIS uses HF cache
+        model_path = "/mnt/models"
+        if os.path.exists(os.path.join(model_path, "config.json")):
+            print(f"Using OCI modelcar at: {model_path}", file=sys.stderr)
+        else:
+            # RHAIIS: model cached in HF format under /mnt/models/models--<org>--<name>/
+            # Set HF_HUB_CACHE so from_pretrained finds it without re-downloading
+            hf_dirs = glob.glob("/mnt/models/models--*")
+            if hf_dirs:
+                os.environ["HF_HUB_CACHE"] = "/mnt/models"
+                # Extract model name from cache dir (e.g. models--Qwen--Qwen3-VL-30B-A3B-Instruct)
+                dirname = os.path.basename(hf_dirs[0])
+                model_path = dirname.replace("models--", "").replace("--", "/")
+                print(f"Using RHAIIS HF cache, model: {model_path}", file=sys.stderr)
+            else:
+                print(f"WARNING: No model found at /mnt/models, trying path as-is", file=sys.stderr)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
         # Build a large vocabulary from the tokenizer to maximize diversity.
         # Sample token IDs directly and decode — each prompt is a unique

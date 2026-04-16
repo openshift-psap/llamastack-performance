@@ -139,7 +139,7 @@ spec:
                 send_batch_size: 1024
             exporters:
               otlp/tempo:
-                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
+                endpoint: tempo-tracing-gateway.openshift-tempo-operator.svc.cluster.local:4317
                 tls:
                   insecure: true
               prometheus:
@@ -242,7 +242,7 @@ spec:
                 send_batch_size: 1024
             exporters:
               otlp/tempo:
-                endpoint: tempo-tracing.openshift-tempo-operator.svc.cluster.local:4317
+                endpoint: tempo-tracing-gateway.openshift-tempo-operator.svc.cluster.local:4317
                 tls:
                   insecure: true
               prometheus:
