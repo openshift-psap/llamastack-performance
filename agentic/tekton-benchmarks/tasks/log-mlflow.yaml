@@ -99,13 +99,26 @@ spec:
 
         # --- vLLM / RHAIIS info (always collected for any test type) ---
         VLLM_IMAGE="unknown"
-        VLLM_ARGS="unknown"
+        VLLM_MODEL="unknown"
+        VLLM_DTYPE="unknown"
+        VLLM_TP_SIZE="unknown"
+        VLLM_MAX_MODEL_LEN="unknown"
+        VLLM_GPU_MEM_UTIL="unknown"
         ISVC=$(oc get inferenceservice -n $NS -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         if [ -n "$ISVC" ]; then
           VLLM_POD=$(oc get pod -n $NS -l serving.kserve.io/inferenceservice=$ISVC -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$VLLM_POD" ]; then
             VLLM_IMAGE=$(oc get pod $VLLM_POD -n $NS -o jsonpath='{.spec.containers[?(@.name=="kserve-container")].image}' 2>/dev/null || echo "unknown")
-            VLLM_ARGS=$(oc get pod $VLLM_POD -n $NS -o jsonpath='{.spec.containers[?(@.name=="kserve-container")].args}' 2>/dev/null || echo "unknown")
+            VLLM_ALL_ARGS=$(oc get pod $VLLM_POD -n $NS -o jsonpath='{.spec.containers[?(@.name=="kserve-container")].args[*]}' 2>/dev/null || echo "")
+            for arg in $VLLM_ALL_ARGS; do
+              case "$arg" in
+                --model=*) VLLM_MODEL="${arg#--model=}" ;;
+                --dtype=*) VLLM_DTYPE="${arg#--dtype=}" ;;
+                --tensor-parallel-size=*) VLLM_TP_SIZE="${arg#--tensor-parallel-size=}" ;;
+                --max-model-len=*) VLLM_MAX_MODEL_LEN="${arg#--max-model-len=}" ;;
+                --gpu-memory-utilization=*) VLLM_GPU_MEM_UTIL="${arg#--gpu-memory-utilization=}" ;;
+              esac
+            done
           fi
         fi
 
@@ -130,7 +143,11 @@ spec:
           "gpu_product": "$GPU_PRODUCT",
           "gpu_count_per_node": "$GPU_COUNT",
           "vllm_image": "$VLLM_IMAGE",
-          "vllm_args": "$VLLM_ARGS",
+          "vllm_model": "$VLLM_MODEL",
+          "vllm_dtype": "$VLLM_DTYPE",
+          "vllm_tensor_parallel_size": "$VLLM_TP_SIZE",
+          "vllm_max_model_len": "$VLLM_MAX_MODEL_LEN",
+          "vllm_gpu_memory_utilization": "$VLLM_GPU_MEM_UTIL",
           "llamastack_operator_version": "$LS_OPERATOR_VERSION",
           "llamastack_image": "$LS_IMAGE",
           "postgres_image": "$PG_IMAGE"

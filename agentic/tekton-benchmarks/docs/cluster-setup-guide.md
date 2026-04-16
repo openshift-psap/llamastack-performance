@@ -219,7 +219,7 @@ oc apply -f agentic/tekton-benchmarks/rbac/tekton-deployer-rbac.yaml
 
 This creates:
 - ServiceAccount `tekton-deployer` in `tekton-llamastack`
-- ClusterRole `tekton-deployer-role` with permissions for: deployments, services, secrets, configmaps, PVCs, llamastackdistributions, inferenceservices, servingruntimes, pods, HPA
+- ClusterRole `tekton-deployer-role` with permissions for: deployments, services, secrets, configmaps, PVCs, llamastackdistributions, inferenceservices, servingruntimes, pods, HPA, OTel collectors, Tempo, ServiceMonitors, cluster version, nodes, CSVs
 - ClusterRoleBinding `tekton-deployer-binding`
 
 ### SCC anyuid for benchmark namespace
