@@ -210,6 +210,28 @@ spec:
                 -p="[{\"op\":\"replace\",\"path\":\"/spec/namespaceSelector/matchNames/0\",\"value\":\"$NAMESPACE\"}]"
 
               echo "OTel Collector ready (Operator): $DEPLOY_NAME"
+
+              # Ensure DCGM GPU metrics ServiceMonitor exists for User Workload Monitoring
+              echo "Ensuring DCGM exporter ServiceMonitor..."
+              cat <<'DCGM_EOF' | oc apply -n nvidia-gpu-operator -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: dcgm-exporter-metrics
+        spec:
+          endpoints:
+            - port: gpu-metrics
+              path: /metrics
+              interval: 15s
+          selector:
+            matchLabels:
+              app: nvidia-dcgm-exporter
+          namespaceSelector:
+            matchNames:
+              - nvidia-gpu-operator
+        DCGM_EOF
+              echo "DCGM ServiceMonitor ensured"
+
               exit 0
             fi
             sleep 2
@@ -349,3 +371,24 @@ spec:
         SM_EOF
 
         echo "OTel Collector ready (manual fallback)"
+
+        # Ensure DCGM GPU metrics ServiceMonitor exists for User Workload Monitoring
+        echo "Ensuring DCGM exporter ServiceMonitor..."
+        cat <<'DCGM_EOF' | oc apply -n nvidia-gpu-operator -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: dcgm-exporter-metrics
+        spec:
+          endpoints:
+            - port: gpu-metrics
+              path: /metrics
+              interval: 15s
+          selector:
+            matchLabels:
+              app: nvidia-dcgm-exporter
+          namespaceSelector:
+            matchNames:
+              - nvidia-gpu-operator
+        DCGM_EOF
+        echo "DCGM ServiceMonitor ensured"

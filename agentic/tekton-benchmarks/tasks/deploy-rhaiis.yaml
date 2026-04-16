@@ -122,6 +122,28 @@ spec:
             echo "RHAIIS model deployed successfully!"
             echo "=============================================="
             oc get inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE)
+
+            echo ""
+            echo "Creating vLLM metrics ServiceMonitor..."
+            cat <<SM_EOF | oc apply -n $(params.NAMESPACE) -f -
+        apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: vllm-rhaiis-metrics
+        spec:
+          endpoints:
+            - port: http
+              path: /metrics
+              interval: 15s
+          selector:
+            matchLabels:
+              serving.kserve.io/inferenceservice: $(params.MODEL_NAME)
+          namespaceSelector:
+            matchNames:
+              - $(params.NAMESPACE)
+        SM_EOF
+            echo "ServiceMonitor created for vLLM RHAIIS metrics"
+
             exit 0
           fi
 
