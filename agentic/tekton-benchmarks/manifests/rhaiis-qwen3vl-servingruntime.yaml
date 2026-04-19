@@ -25,7 +25,6 @@ spec:
     - --tensor-parallel-size=2
     - --dtype=bfloat16
     - --gpu-memory-utilization=0.85
-    - --max-num-seqs=64
     - --enable-chunked-prefill
     - --enable-expert-parallel
     - --trust-remote-code

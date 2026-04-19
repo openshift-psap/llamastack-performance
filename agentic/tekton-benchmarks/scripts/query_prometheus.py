@@ -191,12 +191,16 @@ def main():
     query_and_store("vllm/inter_token_latency_p50_s",
         f'histogram_quantile(0.50, sum(rate(vllm:inter_token_latency_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
 
-    # --- GPU/DCGM Metrics ---
+    # --- GPU/DCGM Metrics (per-GPU series) ---
     print("Querying GPU metrics...")
-    query_and_store("gpu/utilization_pct", "DCGM_FI_DEV_GPU_UTIL")
-    query_and_store("gpu/memory_used_mib", "DCGM_FI_DEV_FB_USED")
-    query_and_store("gpu/temperature_c", "DCGM_FI_DEV_GPU_TEMP")
-    query_and_store("gpu/power_w", "DCGM_FI_DEV_POWER_USAGE")
+    query_and_store("gpu/utilization_pct", "DCGM_FI_DEV_GPU_UTIL",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/memory_used_mib", "DCGM_FI_DEV_FB_USED",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/temperature_c", "DCGM_FI_DEV_GPU_TEMP",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/power_w", "DCGM_FI_DEV_POWER_USAGE",
+        is_labeled=True, label_key="gpu")
 
     # --- Postgres Exporter Metrics ---
     print("Querying Postgres metrics...")

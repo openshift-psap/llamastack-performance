@@ -322,6 +322,17 @@ def main():
                 if val:
                     batch_metrics.append(Metric(key=ts_name, value=val, timestamp=ts(step), step=step))
 
+    seen = set()
+    deduped = []
+    for m in batch_metrics:
+        key = (m.key, m.timestamp, m.step, m.value)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(m)
+    if len(deduped) < len(batch_metrics):
+        print(f"Deduplicated {len(batch_metrics) - len(deduped)} duplicate metrics")
+    batch_metrics = deduped
+
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
 
     with mlflow.start_run(run_name=run_name) as run:
