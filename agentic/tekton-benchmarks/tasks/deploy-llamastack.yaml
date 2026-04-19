@@ -32,6 +32,10 @@ spec:
       description: If "true", skips deployment
       type: string
       default: "false"
+    - name: DISABLE_OTEL
+      description: If "true", disables OpenTelemetry in LlamaStack (sets OTEL_SDK_DISABLED=true, removes collector env vars)
+      type: string
+      default: "false"
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
@@ -61,23 +65,43 @@ spec:
         # Download and patch manifest with correct model predictor name
         MODEL_PREDICTOR="$(params.MODEL_NAME)-predictor"
         VLLM_NS="$(params.VLLM_NAMESPACE)"
+        DISABLE_OTEL="$(params.DISABLE_OTEL)"
         echo "Model predictor: $MODEL_PREDICTOR"
+        echo "Disable OTel: $DISABLE_OTEL"
+
+        # Build the sed pipeline for common patches
+        MANIFEST=$(curl -sL $(params.MANIFEST_PATH))
 
         if [ -n "$VLLM_NS" ] && [ "$VLLM_NS" != "$(params.NAMESPACE)" ]; then
           echo "Patching VLLM_URL for cross-namespace access (vLLM in $VLLM_NS)..."
-          curl -sL $(params.MANIFEST_PATH) | \
-            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}.${VLLM_NS}.svc.cluster.local:80/v1|g" | \
-            sed "s|value: \"llama-32-3b-instruct\"|value: \"$(params.MODEL_NAME)\"|g" | \
-            sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
-            oc apply -f - -n $(params.NAMESPACE)
+          MANIFEST=$(echo "$MANIFEST" | \
+            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}.${VLLM_NS}.svc.cluster.local:80/v1|g")
         else
-          echo "Deploying LlamaStackDistribution..."
-          curl -sL $(params.MANIFEST_PATH) | \
-            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}:80/v1|g" | \
-            sed "s|value: \"llama-32-3b-instruct\"|value: \"$(params.MODEL_NAME)\"|g" | \
-            sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g" | \
-            oc apply -f - -n $(params.NAMESPACE)
+          MANIFEST=$(echo "$MANIFEST" | \
+            sed "s|http://llama-32-3b-instruct-predictor:80/v1|http://${MODEL_PREDICTOR}:80/v1|g")
         fi
+
+        MANIFEST=$(echo "$MANIFEST" | \
+          sed "s|value: \"llama-32-3b-instruct\"|value: \"$(params.MODEL_NAME)\"|g" | \
+          sed "s|NAMESPACE_PLACEHOLDER|$(params.NAMESPACE)|g")
+
+        # If DISABLE_OTEL=true, strip OTel env vars and inject OTEL_SDK_DISABLED=true
+        if [ "$DISABLE_OTEL" = "true" ]; then
+          echo "Disabling OpenTelemetry — removing collector env vars, setting OTEL_SDK_DISABLED=true"
+          # Remove the 4 OTel env var blocks (name + value lines)
+          MANIFEST=$(echo "$MANIFEST" | \
+            sed '/- name: OTEL_EXPORTER_OTLP_ENDPOINT/{N;d;}' | \
+            sed '/- name: OTEL_EXPORTER_OTLP_PROTOCOL/{N;d;}' | \
+            sed '/- name: OTEL_SERVICE_NAME/{N;d;}' | \
+            sed '/- name: OTEL_RESOURCE_ATTRIBUTES/{N;d;}' | \
+            sed '/# OpenTelemetry/d')
+          # Inject OTEL_SDK_DISABLED=true after the POSTGRES_HOST env var
+          MANIFEST=$(echo "$MANIFEST" | \
+            sed '/- name: POSTGRES_HOST/i\        - name: OTEL_SDK_DISABLED\n          value: "true"')
+        fi
+
+        echo "Deploying LlamaStackDistribution..."
+        echo "$MANIFEST" | oc apply -f - -n $(params.NAMESPACE)
         
         # Wait for LlamaStack to be ready
         echo "Waiting for LlamaStack to be ready..."
