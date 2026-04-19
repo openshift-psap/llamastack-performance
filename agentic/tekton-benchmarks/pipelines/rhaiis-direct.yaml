@@ -12,7 +12,7 @@ spec:
   params:
     - name: NAMESPACE
       type: string
-      default: "llamastack-bench"
+      default: "vllm-direct-bench"
     - name: MODEL_NAME
       type: string
       default: "qwen3-vl-30b-a3b-instruct"
