@@ -218,43 +218,48 @@ def main():
         batch_params.append(Param(key=k, value=str(v)))
     batch_tags = [RunTag("pipeline", "tekton"), RunTag("run_source", "tekton-pipeline")]
 
-    now_ms = int(time.time() * 1000)
+    base_ms = int(time.time() * 1000)
     batch_metrics = []
+
+    def ts(step=0):
+        """Unique timestamp per step — avoids SageMaker MLflow metric_pk collisions
+        when (key, timestamp, step, value, is_nan) would otherwise be identical."""
+        return base_ms + step
 
     # Summary metrics from metrics_collector
     for name, val in summary.items():
-        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
+        batch_metrics.append(Metric(key=name, value=val, timestamp=base_ms, step=0))
 
     # Trace aggregate metrics
     for name, val in trace_agg.items():
-        batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
+        batch_metrics.append(Metric(key=name, value=val, timestamp=base_ms, step=0))
 
     # Time-series metrics (per-second samples from metrics_collector)
     for sample in timeseries:
         step = sample.get("second", 0)
-        batch_metrics.append(Metric(key="scenario/active_users", value=sample.get("active_users", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/target_users", value=sample.get("target_users", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/rps_10s_window", value=sample.get("requests_per_sec", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/failures_per_sec_10s_window", value=sample.get("failures_per_sec", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/avg_response_time_cumulative_ms", value=sample.get("avg_response_time_ms", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/total_requests_cumulative", value=sample.get("total_requests", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/total_failures_cumulative", value=sample.get("total_failures", 0), timestamp=now_ms, step=step))
-        batch_metrics.append(Metric(key="scenario/fail_ratio_cumulative_pct", value=sample.get("fail_ratio", 0) * 100, timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="scenario/active_users", value=sample.get("active_users", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/target_users", value=sample.get("target_users", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/rps_10s_window", value=sample.get("requests_per_sec", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/failures_per_sec_10s_window", value=sample.get("failures_per_sec", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/avg_response_time_cumulative_ms", value=sample.get("avg_response_time_ms", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/total_requests_cumulative", value=sample.get("total_requests", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/total_failures_cumulative", value=sample.get("total_failures", 0), timestamp=ts(step), step=step))
+        batch_metrics.append(Metric(key="scenario/fail_ratio_cumulative_pct", value=sample.get("fail_ratio", 0) * 100, timestamp=ts(step), step=step))
 
     # HPA metrics (per-second samples from sidecar)
     for s in hpa:
         step = s.get("sample", 0)
-        batch_metrics.append(Metric(key="hpa/pod_count", value=s.get("pod_count", 0), timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="hpa/pod_count", value=s.get("pod_count", 0), timestamp=ts(step), step=step))
         avg_memory_mib = s.get("avg_memory_ki", 0) / 1024
-        batch_metrics.append(Metric(key="hpa/memory_avg_mib", value=avg_memory_mib, timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="hpa/memory_avg_mib", value=avg_memory_mib, timestamp=ts(step), step=step))
         avg_cpu_millicores = s.get("avg_cpu_n", 0) / 1_000_000
-        batch_metrics.append(Metric(key="hpa/cpu_avg_millicores", value=avg_cpu_millicores, timestamp=now_ms, step=step))
+        batch_metrics.append(Metric(key="hpa/cpu_avg_millicores", value=avg_cpu_millicores, timestamp=ts(step), step=step))
         h = s.get("hpa", {})
         if h:
-            batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas") or 0, timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas") or 0, timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct") or 0, timestamp=now_ms, step=step))
-            batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct") or 0, timestamp=now_ms, step=step))
+            batch_metrics.append(Metric(key="hpa/current_replicas", value=h.get("currentReplicas") or 0, timestamp=ts(step), step=step))
+            batch_metrics.append(Metric(key="hpa/desired_replicas", value=h.get("desiredReplicas") or 0, timestamp=ts(step), step=step))
+            batch_metrics.append(Metric(key="hpa/cpu_percent", value=h.get("currentCPUPct") or 0, timestamp=ts(step), step=step))
+            batch_metrics.append(Metric(key="hpa/memory_percent", value=h.get("currentMemoryPct") or 0, timestamp=ts(step), step=step))
 
     # Prometheus metrics (per-sample from scraper sidecar)
     prom_keys = [
@@ -275,7 +280,7 @@ def main():
         for src_key, metric_key in prom_keys:
             val = s.get(src_key, 0)
             if val:
-                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
+                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=ts(step), step=step))
 
     # Trace per-request time-series metrics
     trace_ts_keys = [
@@ -302,20 +307,20 @@ def main():
         for src_key, metric_key in trace_ts_keys:
             val = r.get(src_key, 0)
             if val:
-                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=now_ms, step=step))
+                batch_metrics.append(Metric(key=metric_key, value=val, timestamp=ts(step), step=step))
 
     # Prometheus query results (OTel, vLLM, GPU, Postgres, Cluster for test window)
     if isinstance(prom_query, dict):
         # Aggregate metrics
         for name, val in prom_query.get("aggregate", {}).items():
-            batch_metrics.append(Metric(key=name, value=val, timestamp=now_ms, step=0))
+            batch_metrics.append(Metric(key=name, value=val, timestamp=base_ms, step=0))
         # Time-series metrics (same step-by-step as Grafana)
         for ts_name, points in prom_query.get("timeseries", {}).items():
             for point in points:
                 step = point.get("step", 0)
                 val = point.get("value", 0)
                 if val:
-                    batch_metrics.append(Metric(key=ts_name, value=val, timestamp=now_ms, step=step))
+                    batch_metrics.append(Metric(key=ts_name, value=val, timestamp=ts(step), step=step))
 
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
 
