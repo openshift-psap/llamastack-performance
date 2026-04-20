@@ -1,0 +1,4 @@
+fastmcp
+transformers
+starlette
+uvicorn
