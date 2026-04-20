@@ -36,13 +36,6 @@ pip install -r requirements.txt
 NUM_TOOLS=5 TOOL_RESPONSE_TOKENS=50 TOKENIZER_MODEL=gpt2 python3 server.py
 ```
 
-## Build and Push Image
-
-```bash
-podman build -t quay.io/rh-ee-ashtarkb/mock_mcp:latest .
-podman push quay.io/rh-ee-ashtarkb/mock_mcp:latest
-```
-
 ## Deploy on OpenShift
 
 ```bash
