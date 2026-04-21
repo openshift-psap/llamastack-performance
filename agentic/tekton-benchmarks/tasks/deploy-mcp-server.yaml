@@ -5,21 +5,39 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Deploys MCP server for tool calling tests.
-    Currently supports sdg-docs-mcp-server.
+    Deploys an MCP server for tool calling tests.
+    Supports both the SDG docs MCP and the configurable benchmark MCP.
+    For benchmark MCP, configure NUM_TOOLS, TOOL_RESPONSE_TOKENS, and
+    TOOL_DESCRIPTION_TOKENS to control tool count and token sizes.
   params:
     - name: NAMESPACE
       description: Namespace to deploy MCP server
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: MCP_SERVER_NAME
       description: Name of the MCP server deployment
       type: string
-      default: "sdg-docs-mcp-server"
-    - name: MCP_MANIFEST_PATH
-      description: Path to MCP server deployment manifest
+      default: "benchmark-mcp-server"
+    - name: MCP_IMAGE
+      description: Container image for the MCP server
       type: string
-      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/mcp-server.yaml"
+      default: "quay.io/rh-ee-ashtarkb/mock_mcp:latest"
+    - name: NUM_TOOLS
+      description: Number of tools to register (benchmark MCP only)
+      type: string
+      default: "1"
+    - name: TOOL_RESPONSE_TOKENS
+      description: Exact token count per tool response (benchmark MCP only)
+      type: string
+      default: "100"
+    - name: TOOL_DESCRIPTION_TOKENS
+      description: Exact token count per tool description, 0 = short default (benchmark MCP only)
+      type: string
+      default: "0"
+    - name: TOKENIZER_MODEL
+      description: HuggingFace model name for tokenizer (benchmark MCP only)
+      type: string
+      default: "Qwen/Qwen3-VL-30B-A3B-Instruct"
     - name: SKIP_DEPLOY
       description: If "true", skips deployment (assumes MCP server already running)
       type: string
@@ -33,44 +51,125 @@ spec:
       script: |
         #!/bin/bash
         set -e
-        
-        MCP_URL="http://$(params.MCP_SERVER_NAME).$(params.NAMESPACE).svc.cluster.local:8000/sse"
-        
+
+        NAMESPACE="$(params.NAMESPACE)"
+        SERVER_NAME="$(params.MCP_SERVER_NAME)"
+        MCP_URL="http://${SERVER_NAME}.${NAMESPACE}.svc.cluster.local:8000/sse"
+
         if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
           echo "SKIP_DEPLOY is true, skipping MCP server deployment."
           echo "Assuming MCP server is already running at: $MCP_URL"
           echo -n "$MCP_URL" > $(results.mcp-server-url.path)
           exit 0
         fi
-        
+
         echo "=============================================="
-        echo "Deploying MCP Server"
+        echo "Deploying Benchmark MCP Server"
         echo "=============================================="
-        echo "Namespace: $(params.NAMESPACE)"
-        echo "Server: $(params.MCP_SERVER_NAME)"
+        echo "Namespace: $NAMESPACE"
+        echo "Server: $SERVER_NAME"
+        echo "Image: $(params.MCP_IMAGE)"
+        echo "NUM_TOOLS: $(params.NUM_TOOLS)"
+        echo "TOOL_RESPONSE_TOKENS: $(params.TOOL_RESPONSE_TOKENS)"
+        echo "TOOL_DESCRIPTION_TOKENS: $(params.TOOL_DESCRIPTION_TOKENS)"
+        echo "TOKENIZER_MODEL: $(params.TOKENIZER_MODEL)"
         echo ""
-        
-        # Clean up existing deployment
-        echo "Cleaning up existing MCP server..."
-        oc delete deployment $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
-        oc delete service $(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
-        
-        echo "Waiting for cleanup..."
+
+        # Clean up existing
+        oc delete deployment $SERVER_NAME -n $NAMESPACE --ignore-not-found=true
+        oc delete service $SERVER_NAME -n $NAMESPACE --ignore-not-found=true
         sleep 5
-        
-        # Deploy MCP server
-        echo "Deploying MCP server..."
-        oc apply -f $(params.MCP_MANIFEST_PATH) -n $(params.NAMESPACE)
-        
-        # Wait for deployment to be ready
+
+        # Deploy
+        cat <<DEPLOY_EOF | oc apply -n $NAMESPACE -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $SERVER_NAME
+          labels:
+            app: $SERVER_NAME
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: $SERVER_NAME
+          template:
+            metadata:
+              labels:
+                app: $SERVER_NAME
+            spec:
+              containers:
+              - name: mcp-server
+                image: $(params.MCP_IMAGE)
+                imagePullPolicy: Always
+                ports:
+                - containerPort: 8000
+                  name: http
+                env:
+                - name: NUM_TOOLS
+                  value: "$(params.NUM_TOOLS)"
+                - name: TOOL_RESPONSE_TOKENS
+                  value: "$(params.TOOL_RESPONSE_TOKENS)"
+                - name: TOOL_DESCRIPTION_TOKENS
+                  value: "$(params.TOOL_DESCRIPTION_TOKENS)"
+                - name: TOKENIZER_MODEL
+                  value: "$(params.TOKENIZER_MODEL)"
+                - name: POOL_SIZE
+                  value: "50"
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "200m"
+                  limits:
+                    memory: "2Gi"
+                    cpu: "1"
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8000
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8000
+                  initialDelaySeconds: 20
+                  periodSeconds: 10
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+                  capabilities:
+                    drop:
+                    - ALL
+        DEPLOY_EOF
+
+        cat <<SVC_EOF | oc apply -n $NAMESPACE -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: $SERVER_NAME
+          labels:
+            app: $SERVER_NAME
+        spec:
+          selector:
+            app: $SERVER_NAME
+          ports:
+          - protocol: TCP
+            port: 8000
+            targetPort: 8000
+            name: http
+          type: ClusterIP
+        SVC_EOF
+
         echo "Waiting for MCP server to be ready..."
-        oc wait --for=condition=available deployment/$(params.MCP_SERVER_NAME) -n $(params.NAMESPACE) --timeout=120s
-        
+        oc wait --for=condition=available deployment/$SERVER_NAME -n $NAMESPACE --timeout=180s
+
         echo ""
         echo "=============================================="
-        echo "MCP Server deployed successfully!"
+        echo "Benchmark MCP Server deployed successfully!"
         echo "=============================================="
         echo "URL: $MCP_URL"
-        
-        # Output URL as result
+
         echo -n "$MCP_URL" > $(results.mcp-server-url.path)

@@ -33,6 +33,10 @@ spec:
       description: "Test duration in seconds (used to calculate prompt pool size)"
       type: string
       default: "60"
+    - name: PROMPT_SUFFIX
+      description: "Text appended to each prompt (e.g., tool instruction). Filler tokens are reduced to keep total at INPUT_TOKENS."
+      type: string
+      default: ""
   workspaces:
     - name: results
       description: Shared workspace where the generated prompts are written
@@ -86,6 +90,7 @@ spec:
 
         target_tokens = int(sys.argv[1])
         num_prompts = int(sys.argv[2])
+        prompt_suffix = sys.argv[3] if len(sys.argv) > 3 else ""
 
         # Detect model path: OCI modelcar has files at /mnt/models, RHAIIS uses HF cache
         model_path = "/mnt/models"
@@ -117,13 +122,26 @@ spec:
             and tokenizer.decode([i]).strip() not in tokenizer.all_special_tokens
         ]
 
+        # If suffix provided, reserve tokens for it and reduce filler accordingly
+        suffix_tokens = 0
+        if prompt_suffix:
+            suffix_tokens = len(tokenizer.encode(prompt_suffix, add_special_tokens=False))
+            print(f"Suffix: '{prompt_suffix}' ({suffix_tokens} tokens)", file=sys.stderr)
+
+        filler_target = target_tokens - suffix_tokens
+
         for i in range(num_prompts):
             rng = random.Random(i)
-            sampled_ids = rng.choices(valid_ids, k=target_tokens)
-            prompt = tokenizer.decode(sampled_ids, skip_special_tokens=True)
-            # Re-encode to get actual token count and trim if needed
-            actual_ids = tokenizer.encode(prompt)[:target_tokens]
-            prompt = tokenizer.decode(actual_ids, skip_special_tokens=True)
+            sampled_ids = rng.choices(valid_ids, k=max(filler_target, 1))
+            filler = tokenizer.decode(sampled_ids, skip_special_tokens=True)
+            actual_ids = tokenizer.encode(filler, add_special_tokens=False)[:max(filler_target, 1)]
+            filler = tokenizer.decode(actual_ids, skip_special_tokens=True)
+
+            if prompt_suffix:
+                prompt = filler + " " + prompt_suffix
+            else:
+                prompt = filler
+
             actual = len(tokenizer.encode(prompt))
             print(json.dumps({"index": i, "tokens": actual, "prompt": prompt}))
             if i < 5 or i % 100 == 0:
@@ -132,8 +150,10 @@ spec:
         print(f"Generated {num_prompts} prompts, each ~{target_tokens} tokens", file=sys.stderr)
         PYEOF
 
+        PROMPT_SUFFIX='$(params.PROMPT_SUFFIX)'
+
         oc cp /tmp/gen_prompts.py $NAMESPACE/$PREDICTOR_POD:/tmp/gen_prompts.py
-        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompts.py $INPUT_TOKENS $NUM_PROMPTS > "$PROMPTS_JSONL"
+        oc exec -n $NAMESPACE $PREDICTOR_POD -- python3 /tmp/gen_prompts.py $INPUT_TOKENS $NUM_PROMPTS "$PROMPT_SUFFIX" > "$PROMPTS_JSONL"
 
         PROMPT_COUNT=$(wc -l < "$PROMPTS_JSONL" | tr -d ' ')
         FILE_SIZE=$(du -h "$PROMPTS_JSONL" | cut -f1)

@@ -32,6 +32,7 @@ user_class_name = os.environ.get("USER_CLASS", "ResponsesMCPUser")
 
 user_class_map = {
     "ResponsesMCPUser": locustfile_users.ResponsesMCPUser,
+    "ResponsesMCPBenchmarkUser": locustfile_users.ResponsesMCPBenchmarkUser,
     "ResponsesSimpleUser": locustfile_users.ResponsesSimpleUser,
     "ChatCompletionsUser": locustfile_users.ChatCompletionsUser,
 }

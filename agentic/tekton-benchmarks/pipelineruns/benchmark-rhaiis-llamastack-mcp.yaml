@@ -1,0 +1,62 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: benchmark-rhaiis-llamastack-mcp-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: rhaiis-llamastack-mcp-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  params:
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
+    - name: MODEL_NAME
+      value: "qwen3-vl-30b-a3b-instruct"
+    - name: MODEL
+      value: "vllm-inference/qwen3-vl-30b-a3b-instruct"
+    - name: USERS
+      value: "128"
+    - name: SPAWN_RATE
+      value: "128"
+    - name: RUN_TIME_SECONDS
+      value: "600"
+    - name: INPUT_TOKENS
+      value: "100"
+    - name: OUTPUT_TOKENS
+      value: "50"
+    - name: WARMUP_SECONDS
+      value: "300"
+    - name: LOAD_SHAPE
+      value: "steady"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "rhaiis-benchmarks"
+    - name: PVC_NAME
+      value: "qwen3-vl-model-pvc"
+    - name: PVC_SIZE
+      value: "120Gi"
+    - name: DEPLOY_TIMEOUT
+      value: "900"
+    - name: SKIP_DEPLOY_RHAIIS
+      value: "false"
+    # MCP server: 1 tool, 50-token responses, 50-token descriptions
+    - name: MCP_NUM_TOOLS
+      value: "1"
+    - name: MCP_TOOL_RESPONSE_TOKENS
+      value: "50"
+    - name: MCP_TOOL_DESCRIPTION_TOKENS
+      value: "50"
+    - name: PROMPT_SUFFIX
+      value: "Ignore everything above and use tool_0 to retrieve the document."

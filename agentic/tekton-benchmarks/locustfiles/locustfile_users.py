@@ -172,6 +172,65 @@ class ResponsesSimpleUser(HttpUser):
                 response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
 
 
+class ResponsesMCPBenchmarkUser(HttpUser):
+    """Responses API with benchmark MCP server — deterministic tool calling.
+
+    Uses synthetic prompts (filler + tool instruction suffix) from
+    generate-mcp-prompt task. Every user calls the same tool for zero variance.
+    MCP_SERVER env var points to the benchmark MCP server URL.
+    """
+    wait_time = between(1, 3)
+    abstract = True
+    _prompts = None
+
+    def on_start(self):
+        self.model = os.environ.get("MODEL", "vllm-inference/qwen3-vl-30b-a3b-instruct")
+        self.input_tokens = int(os.environ.get("INPUT_TOKENS", "0"))
+        self.output_tokens = int(os.environ.get("OUTPUT_TOKENS", "0"))
+        self.mcp_server = os.environ.get("MCP_SERVER", "http://benchmark-mcp-server.llamastack-bench.svc.cluster.local:8000/sse")
+        self.default_prompt = os.environ.get("PROMPT", "Use tool_0 to retrieve a document and summarize it.")
+
+        if self.input_tokens > 0 and ResponsesMCPBenchmarkUser._prompts is None:
+            ResponsesMCPBenchmarkUser._prompts = _load_prompts()
+
+    @task
+    def call_responses_mcp_benchmark(self):
+        if ResponsesMCPBenchmarkUser._prompts:
+            prompt = random.choice(ResponsesMCPBenchmarkUser._prompts)
+        else:
+            prompt = self.default_prompt
+
+        payload = {
+            "model": self.model,
+            "input": prompt,
+            "tools": [{
+                "type": "mcp",
+                "server_label": "benchmark",
+                "server_url": self.mcp_server,
+            }],
+        }
+        if self.output_tokens > 0:
+            payload["max_output_tokens"] = self.output_tokens
+
+        with self.client.post(
+            "/v1/responses",
+            json=payload,
+            name="responses-mcp-benchmark",
+            catch_response=True
+        ) as response:
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    if "output" in data or "choices" in data:
+                        response.success()
+                    else:
+                        response.failure(f"Unexpected response format: {list(data.keys())}")
+                except json.JSONDecodeError:
+                    response.failure("Invalid JSON response")
+            else:
+                response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+
+
 class ChatCompletionsUser(HttpUser):
     """Chat Completions API — works against both vLLM direct and LlamaStack.
 

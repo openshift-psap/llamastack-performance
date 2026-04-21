@@ -1,0 +1,321 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: rhaiis-llamastack-mcp-benchmark
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Benchmark LlamaStack Responses API with deterministic MCP tool calling.
+    Deploys RHAIIS, PostgreSQL, benchmark MCP server, OTel tracing, and LlamaStack.
+    Prompts are synthetic filler + "use tool_0" suffix for zero variance across users.
+    MCP server returns tokenizer-accurate random text with configurable token counts.
+  params:
+    - name: NAMESPACE
+      type: string
+      default: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      type: string
+      default: "llamastack-benchmark"
+    - name: MODEL_NAME
+      type: string
+      default: "qwen3-vl-30b-a3b-instruct"
+    - name: USERS
+      type: string
+      default: "10"
+    - name: SPAWN_RATE
+      type: string
+      default: "1"
+    - name: RUN_TIME_SECONDS
+      type: string
+      default: "60"
+    - name: MODEL
+      type: string
+      default: "vllm-inference/qwen3-vl-30b-a3b-instruct"
+    - name: PROMPT
+      type: string
+      default: "Use tool_0 to retrieve a document and summarize it."
+    - name: LOAD_SHAPE
+      type: string
+      default: "steady"
+    - name: CUSTOM_STAGES
+      type: string
+      default: "[]"
+    - name: EXTRA_ENV
+      type: string
+      default: ""
+    - name: HPA_POST_TEST_SECONDS
+      type: string
+      default: "30"
+    - name: ENABLE_MLFLOW
+      type: string
+      default: "false"
+    - name: MLFLOW_EXPERIMENT
+      type: string
+      default: "rhaiis-benchmarks"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      type: string
+      default: "tekton"
+    - name: TEMPO_ENDPOINT
+      type: string
+      default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
+    - name: INPUT_TOKENS
+      type: string
+      default: "100"
+    - name: OUTPUT_TOKENS
+      type: string
+      default: "50"
+    - name: SKIP_CLEANUP
+      type: string
+      default: "false"
+    - name: WARMUP_SECONDS
+      type: string
+      default: "300"
+    - name: PVC_NAME
+      type: string
+      default: "qwen3-vl-model-pvc"
+    - name: PVC_SIZE
+      type: string
+      default: "120Gi"
+    - name: DEPLOY_TIMEOUT
+      type: string
+      default: "900"
+    - name: SKIP_DEPLOY_RHAIIS
+      type: string
+      default: "false"
+    # MCP server configuration
+    - name: MCP_NUM_TOOLS
+      type: string
+      default: "1"
+    - name: MCP_TOOL_RESPONSE_TOKENS
+      type: string
+      default: "50"
+    - name: MCP_TOOL_DESCRIPTION_TOKENS
+      type: string
+      default: "50"
+    - name: MCP_TOKENIZER_MODEL
+      type: string
+      default: "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    - name: PROMPT_SUFFIX
+      type: string
+      default: "Ignore everything above and use tool_0 to retrieve the document."
+  workspaces:
+    - name: results
+  tasks:
+    - name: generate-configmap
+      taskRef:
+        name: generate-configmap
+
+    - name: deploy-rhaiis
+      taskRef:
+        name: deploy-rhaiis
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: PVC_NAME
+          value: $(params.PVC_NAME)
+        - name: PVC_SIZE
+          value: $(params.PVC_SIZE)
+        - name: DEPLOY_TIMEOUT
+          value: $(params.DEPLOY_TIMEOUT)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_RHAIIS)
+
+    - name: deploy-postgres
+      taskRef:
+        name: deploy-postgres
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+
+    - name: deploy-mcp-server
+      taskRef:
+        name: deploy-mcp-server
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: NUM_TOOLS
+          value: $(params.MCP_NUM_TOOLS)
+        - name: TOOL_RESPONSE_TOKENS
+          value: $(params.MCP_TOOL_RESPONSE_TOKENS)
+        - name: TOOL_DESCRIPTION_TOKENS
+          value: $(params.MCP_TOOL_DESCRIPTION_TOKENS)
+        - name: TOKENIZER_MODEL
+          value: $(params.MCP_TOKENIZER_MODEL)
+
+    - name: deploy-tracing
+      taskRef:
+        name: deploy-tracing
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+
+    - name: generate-prompt
+      taskRef:
+        name: generate-prompt
+      runAfter:
+        - deploy-rhaiis
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: USERS
+          value: $(params.USERS)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: PROMPT_SUFFIX
+          value: $(params.PROMPT_SUFFIX)
+
+    - name: deploy-llamastack
+      taskRef:
+        name: deploy-llamastack
+      runAfter:
+        - deploy-rhaiis
+        - deploy-postgres
+        - deploy-tracing
+        - deploy-mcp-server
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: $(params.DISTRIBUTION_NAME)
+        - name: VLLM_NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+
+    - name: run-locust
+      taskRef:
+        name: run-locust
+      runAfter:
+        - deploy-llamastack
+        - generate-configmap
+        - generate-prompt
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: HOST
+          value: "http://$(params.DISTRIBUTION_NAME)-service.$(params.NAMESPACE).svc.cluster.local:8321"
+        - name: USER_CLASS
+          value: "ResponsesMCPBenchmarkUser"
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MODEL
+          value: $(params.MODEL)
+        - name: PROMPT
+          value: $(params.PROMPT)
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
+        - name: EXTRA_ENV
+          value: "MCP_SERVER=http://benchmark-mcp-server.$(params.NAMESPACE).svc.cluster.local:8000/sse"
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: $(params.DISTRIBUTION_NAME)
+        - name: HPA_POST_TEST_SECONDS
+          value: $(params.HPA_POST_TEST_SECONDS)
+        - name: POSTGRES_METRICS_HOST
+          value: "postgres"
+        - name: VLLM_METRICS_HOST
+          value: "$(params.MODEL_NAME)-predictor"
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
+        - name: WARMUP_SECONDS
+          value: $(params.WARMUP_SECONDS)
+
+    - name: push-to-prometheus
+      taskRef:
+        name: push-to-prometheus
+      runAfter:
+        - run-locust
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: TEMPO_ENDPOINT
+          value: $(params.TEMPO_ENDPOINT)
+        - name: RUN_ID
+          value: "$(params.NAMESPACE)-$(params.USERS)u-$(params.LOAD_SHAPE)-mcp"
+
+    - name: log-mlflow
+      taskRef:
+        name: log-mlflow
+      runAfter:
+        - push-to-prometheus
+      when:
+        - input: $(params.ENABLE_MLFLOW)
+          operator: in
+          values: ["true"]
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: MLFLOW_EXPERIMENT
+          value: $(params.MLFLOW_EXPERIMENT)
+        - name: MLFLOW_RUN_NAME_PREFIX
+          value: $(params.MLFLOW_RUN_NAME_PREFIX)
+        - name: TEMPO_ENDPOINT
+          value: $(params.TEMPO_ENDPOINT)
+        - name: USER_CLASS
+          value: "ResponsesMCPBenchmarkUser"
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MODEL
+          value: $(params.MODEL)
+        - name: PROMPT
+          value: $(params.PROMPT)
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: $(params.DISTRIBUTION_NAME)
+        - name: EXTRA_ENV
+          value: "MCP_NUM_TOOLS=$(params.MCP_NUM_TOOLS)\nMCP_TOOL_RESPONSE_TOKENS=$(params.MCP_TOOL_RESPONSE_TOKENS)\nMCP_TOOL_DESCRIPTION_TOKENS=$(params.MCP_TOOL_DESCRIPTION_TOKENS)"
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
+
+    - name: cleanup
+      taskRef:
+        name: cleanup
+      runAfter:
+        - log-mlflow
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: $(params.DISTRIBUTION_NAME)
+        - name: MODEL_NAME
+          value: $(params.MODEL_NAME)
+        - name: SKIP_CLEANUP
+          value: $(params.SKIP_CLEANUP)
+        - name: CLEANUP_VLLM
+          value: "true"
+        - name: CLEANUP_MCP
+          value: "true"
