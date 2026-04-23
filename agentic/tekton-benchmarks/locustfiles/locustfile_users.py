@@ -85,6 +85,7 @@ class ResponsesMCPUser(HttpUser):
         payload = {
             "model": self.model,
             "input": self.prompt,
+            "stream": False,
             "tools": [{
                 "type": "mcp",
                 "server_label": "deepwiki",
@@ -146,7 +147,8 @@ class ResponsesSimpleUser(HttpUser):
             prompt = self.default_prompt
         payload = {
             "model": self.model,
-            "input": prompt
+            "input": prompt,
+            "stream": False,
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
@@ -203,6 +205,7 @@ class ResponsesMCPBenchmarkUser(HttpUser):
         payload = {
             "model": self.model,
             "input": prompt,
+            "stream": False,
             "tools": [{
                 "type": "mcp",
                 "server_label": "benchmark",
