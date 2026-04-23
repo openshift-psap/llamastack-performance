@@ -229,7 +229,7 @@ spec:
         - name: HPA_POST_TEST_SECONDS
           value: $(params.HPA_POST_TEST_SECONDS)
         - name: POSTGRES_METRICS_HOST
-          value: "postgres"
+          value: "postgres-db"
         - name: VLLM_METRICS_HOST
           value: "$(params.MODEL_NAME)-predictor"
         - name: INPUT_TOKENS

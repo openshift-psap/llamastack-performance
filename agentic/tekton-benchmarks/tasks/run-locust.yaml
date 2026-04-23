@@ -26,7 +26,7 @@ spec:
       description: Test duration in seconds
       type: string
     - name: MCP_SERVER
-      default: "http://sdg-docs-mcp-server.llamastack.svc.cluster.local:8000/sse"
+      default: "http://benchmark-mcp-server.llamastack-bench.svc.cluster.local:8000/sse"
       description: MCP server URL for tool calling
       type: string
     - name: MODEL
