@@ -299,15 +299,29 @@ def compute_aggregates(per_request):
     _add_full_stats(metrics, "trace/ls_overhead", ls_overhead)
 
     if tools:
-        metrics["trace/avg_tool_calls_per_request"] = statistics.mean(tools)
-        metrics["trace/total_tool_calls"] = sum(tools)
+        metrics["trace/tool_calls/avg"] = statistics.mean(tools)
+        metrics["trace/tool_calls/min"] = min(tools)
+        metrics["trace/tool_calls/max"] = max(tools)
+        metrics["trace/tool_calls/total"] = sum(tools)
 
     if inp_tokens:
         metrics["trace/tokens/avg_input"] = statistics.mean(inp_tokens)
+        metrics["trace/tokens/min_input"] = min(inp_tokens)
+        metrics["trace/tokens/max_input"] = max(inp_tokens)
     if out_tokens:
         metrics["trace/tokens/avg_output"] = statistics.mean(out_tokens)
+        metrics["trace/tokens/min_output"] = min(out_tokens)
+        metrics["trace/tokens/max_output"] = max(out_tokens)
     if inp_tokens and out_tokens:
         metrics["trace/tokens/avg_total"] = statistics.mean([i + o for i, o in zip(inp_tokens, out_tokens)])
+
+    # Combined MCP timing (list_tools + invoke_tool)
+    mcp_total = [
+        sum(r["list_mcp_tools_durations_ms"]) + sum(r["invoke_mcp_tool_durations_ms"])
+        for r in per_request
+        if r["list_mcp_tools_durations_ms"] or r["invoke_mcp_tool_durations_ms"]
+    ]
+    _add_full_stats(metrics, "trace/mcp_total", mcp_total)
 
     return metrics
 

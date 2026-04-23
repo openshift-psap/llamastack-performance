@@ -41,6 +41,7 @@ spec:
         # Delete existing PostgreSQL if present
         echo "Cleaning up existing PostgreSQL..."
         oc delete deployment postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service postgres-db -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete service postgres -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true

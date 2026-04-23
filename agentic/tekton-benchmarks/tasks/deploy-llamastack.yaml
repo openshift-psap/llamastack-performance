@@ -5,7 +5,8 @@ metadata:
   namespace: tekton-llamastack
 spec:
   description: |
-    Deploy LlamaStackDistribution.
+    Deploy LlamaStackDistribution using the RHOAI operator-managed rh-dev distribution.
+    Requires the llamastackoperator to be enabled (Managed) in the DataScienceCluster.
     Waits for the distribution to be ready before completing.
   params:
     - name: NAMESPACE
@@ -49,11 +50,21 @@ spec:
         fi
         
         echo "=============================================="
-        echo "Deploying LlamaStack"
+        echo "Deploying LlamaStack (RHOAI operator rh-dev)"
         echo "=============================================="
         echo "Namespace: $(params.NAMESPACE)"
         echo "Distribution: $(params.DISTRIBUTION_NAME)"
         echo ""
+        
+        # Verify the LlamaStack operator is running
+        echo "Checking LlamaStack operator status..."
+        if ! oc get deployment -n redhat-ods-applications -l app.kubernetes.io/name=llama-stack-k8s-operator -o name 2>/dev/null | grep -q deployment; then
+          echo "WARNING: LlamaStack operator not found. Ensure llamastackoperator is set to Managed in the DSC."
+          echo "Attempting to enable it..."
+          oc patch datasciencecluster default-dsc --type merge -p '{"spec":{"components":{"llamastackoperator":{"managementState":"Managed"}}}}' || true
+          echo "Waiting for operator to start..."
+          sleep 30
+        fi
         
         # Delete existing LlamaStack if present
         echo "Cleaning up existing LlamaStack..."
@@ -62,16 +73,15 @@ spec:
         echo "Waiting for cleanup..."
         sleep 10
         
-        # Download and patch manifest with correct model predictor name
         MODEL_PREDICTOR="$(params.MODEL_NAME)-predictor"
         VLLM_NS="$(params.VLLM_NAMESPACE)"
         DISABLE_OTEL="$(params.DISABLE_OTEL)"
         echo "Model predictor: $MODEL_PREDICTOR"
         echo "Disable OTel: $DISABLE_OTEL"
 
-        # Build the sed pipeline for common patches
         MANIFEST=$(curl -sL $(params.MANIFEST_PATH))
 
+        # Patch VLLM_URL for model name and optional cross-namespace
         if [ -n "$VLLM_NS" ] && [ "$VLLM_NS" != "$(params.NAMESPACE)" ]; then
           echo "Patching VLLM_URL for cross-namespace access (vLLM in $VLLM_NS)..."
           MANIFEST=$(echo "$MANIFEST" | \
@@ -88,14 +98,11 @@ spec:
         # If DISABLE_OTEL=true, strip OTel env vars and inject OTEL_SDK_DISABLED=true
         if [ "$DISABLE_OTEL" = "true" ]; then
           echo "Disabling OpenTelemetry — removing collector env vars, setting OTEL_SDK_DISABLED=true"
-          # Remove the 4 OTel env var blocks (name + value lines)
           MANIFEST=$(echo "$MANIFEST" | \
             sed '/- name: OTEL_EXPORTER_OTLP_ENDPOINT/{N;d;}' | \
             sed '/- name: OTEL_EXPORTER_OTLP_PROTOCOL/{N;d;}' | \
             sed '/- name: OTEL_SERVICE_NAME/{N;d;}' | \
-            sed '/- name: OTEL_RESOURCE_ATTRIBUTES/{N;d;}' | \
-            sed '/# OpenTelemetry/d')
-          # Inject OTEL_SDK_DISABLED=true after the POSTGRES_HOST env var
+            sed '/- name: OTEL_RESOURCE_ATTRIBUTES/{N;d;}')
           MANIFEST=$(echo "$MANIFEST" | \
             sed '/- name: POSTGRES_HOST/i\        - name: OTEL_SDK_DISABLED\n          value: "true"')
         fi
@@ -109,9 +116,14 @@ spec:
           PHASE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
           echo "  Status: $PHASE"
           if [ "$PHASE" = "Ready" ]; then
+            VERSION=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.version.llamaStackServerVersion}' 2>/dev/null || echo "unknown")
+            OPERATOR_VER=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.version.operatorVersion}' 2>/dev/null || echo "unknown")
             echo ""
             echo "=============================================="
             echo "LlamaStack deployed successfully!"
+            echo "  Server version:   $VERSION"
+            echo "  Operator version: $OPERATOR_VER"
+            echo "  Distribution:     rh-dev (RHOAI managed)"
             echo "=============================================="
             exit 0
           fi
@@ -119,4 +131,6 @@ spec:
         done
         
         echo "ERROR: LlamaStack did not become ready in time"
+        echo "Status details:"
+        oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) -o jsonpath='{.status.conditions[0].message}' 2>/dev/null || true
         exit 1

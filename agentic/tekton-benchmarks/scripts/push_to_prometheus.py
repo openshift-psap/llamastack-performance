@@ -130,7 +130,8 @@ def main():
         if per_req:
             last_req = per_req[-1]
             for key in ["request_duration_ms", "inference_duration_ms", "db_duration_ms",
-                         "db_connect_ms", "mcp_http_duration_ms", "ls_overhead_ms",
+                         "db_connect_ms", "mcp_http_duration_ms", "list_mcp_tools_ms",
+                         "invoke_mcp_tool_ms", "ls_overhead_ms",
                          "input_tokens", "output_tokens", "tool_calls"]:
                 val = last_req.get(key, 0)
                 g(f"trace_last_{key}", key).labels(*label_values).set(val)

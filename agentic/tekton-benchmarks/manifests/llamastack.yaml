@@ -1,6 +1,8 @@
-# LlamaStack Distribution with PostgreSQL and OpenTelemetry
+# LlamaStack Distribution using RHOAI operator-managed image (rh-dev distribution)
 # Namespace is NOT hardcoded - use: oc apply -f llamastack.yaml -n <namespace>
 #
+# Requires: RHOAI 3.4.0-ea.2+ with llamastackoperator set to Managed in the DSC.
+# PostgreSQL must be deployed separately (service name: postgres-db).
 # NOTE: Environment variables reference services in the SAME namespace.
 # If vLLM is in a different namespace, update VLLM_URL accordingly.
 apiVersion: llamastack.io/v1alpha1
@@ -10,53 +12,34 @@ metadata:
 spec:
   replicas: 1
   server:
-    autoscaling:
-      minReplicas: 1
-      maxReplicas: 5
-      targetCPUUtilizationPercentage: 75
-    podOverrides:
-      serviceAccountName: default
     containerSpec:
       env:
-        # vLLM connection - assumes vLLM is in the SAME namespace
-        # If vLLM is in a different namespace (e.g., bench), update this URL
         - name: VLLM_URL
           value: "http://llama-32-3b-instruct-predictor:80/v1"
         - name: INFERENCE_MODEL
           value: "llama-32-3b-instruct"
         - name: VLLM_TLS_VERIFY
           value: "false"
-        - name: FMS_ORCHESTRATOR_URL
-          value: "http://localhost:1234"
-        # Embedding provider
         - name: ENABLE_SENTENCE_TRANSFORMERS
           value: "true"
         - name: EMBEDDING_PROVIDER
           value: "sentence-transformers"
-        # OpenTelemetry - assumes otel-collector is in the SAME namespace
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://otel-collector:4318"
+          value: "http://otel-collector-collector:4318"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
           value: "http/protobuf"
         - name: OTEL_SERVICE_NAME
           value: "llamastack"
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "k8s.namespace.name=NAMESPACE_PLACEHOLDER"
-        # PostgreSQL - assumes postgres is in the SAME namespace
         - name: POSTGRES_HOST
-          value: "postgres"
+          value: "postgres-db"
         - name: POSTGRES_PORT
           value: "5432"
         - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_DB
+          value: "llamastack"
         - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_USER
+          value: "llamastack"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -65,7 +48,6 @@ spec:
       name: llama-stack
       port: 8321
     distribution:
-      image: quay.io/rhoai/odh-llama-stack-core-rhel9:rhoai-3.4-ea.2
+      name: rh-dev
     storage:
       size: 20Gi
-      mountPath: /opt/app-root/src/.llama/distributions/rh

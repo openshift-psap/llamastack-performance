@@ -56,9 +56,10 @@ data:
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 }, "id": 5,
+          "gridPos": { "h": 7, "w": 6, "x": 0, "y": 9 }, "id": 5,
           "targets": [
             { "expr": "trace_trace_inference_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "inference", "refId": "A" },
+            { "expr": "(trace_trace_mcp_total_p50_ms{run_id=~\"$run_id\"} or vector(0)) > 0", "legendFormat": "MCP", "refId": "D" },
             { "expr": "trace_trace_db_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "database", "refId": "B" },
             { "expr": "trace_trace_ls_overhead_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "LS overhead", "refId": "C" }
           ],
@@ -66,8 +67,20 @@ data:
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } } },
+          "gridPos": { "h": 7, "w": 6, "x": 6, "y": 9 }, "id": 8,
+          "targets": [
+            { "expr": "trace_trace_inference_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "inference", "refId": "A" },
+            { "expr": "(trace_trace_mcp_total_p95_ms{run_id=~\"$run_id\"} or vector(0)) > 0", "legendFormat": "MCP", "refId": "D" },
+            { "expr": "trace_trace_db_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "database", "refId": "B" },
+            { "expr": "trace_trace_ls_overhead_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "LS overhead", "refId": "C" }
+          ],
+          "title": "Latency Breakdown (p95)", "type": "bargauge"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "fixed", "fixedColor": "orange" }, "thresholds": { "mode": "absolute", "steps": [{"color": "orange", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 }, "id": 6,
+          "gridPos": { "h": 7, "w": 6, "x": 12, "y": 9 }, "id": 6,
           "targets": [
             { "expr": "trace_trace_total_request_p50_ms{run_id=~\"$run_id\"}", "legendFormat": "p50", "refId": "A" },
             { "expr": "trace_trace_total_request_p95_ms{run_id=~\"$run_id\"}", "legendFormat": "p95", "refId": "B" },
@@ -78,13 +91,19 @@ data:
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "purple" }, "thresholds": { "mode": "absolute", "steps": [{"color": "purple", "value": null}] } } },
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 }, "id": 7,
+          "gridPos": { "h": 7, "w": 6, "x": 18, "y": 9 }, "id": 7,
           "targets": [
-            { "expr": "trace_last_input_tokens{run_id=~\"$run_id\"}", "legendFormat": "input", "refId": "A" },
-            { "expr": "trace_last_output_tokens{run_id=~\"$run_id\"}", "legendFormat": "output", "refId": "B" },
-            { "expr": "trace_last_tool_calls{run_id=~\"$run_id\"}", "legendFormat": "tool calls", "refId": "C" }
+            { "expr": "trace_trace_tokens_avg_input{run_id=~\"$run_id\"}", "legendFormat": "input avg", "refId": "A" },
+            { "expr": "trace_trace_tokens_min_input{run_id=~\"$run_id\"}", "legendFormat": "input min", "refId": "B" },
+            { "expr": "trace_trace_tokens_max_input{run_id=~\"$run_id\"}", "legendFormat": "input max", "refId": "C" },
+            { "expr": "trace_trace_tokens_avg_output{run_id=~\"$run_id\"}", "legendFormat": "output avg", "refId": "D" },
+            { "expr": "trace_trace_tokens_min_output{run_id=~\"$run_id\"}", "legendFormat": "output min", "refId": "E" },
+            { "expr": "trace_trace_tokens_max_output{run_id=~\"$run_id\"}", "legendFormat": "output max", "refId": "F" },
+            { "expr": "trace_trace_tool_calls_avg{run_id=~\"$run_id\"}", "legendFormat": "tool calls avg", "refId": "G" },
+            { "expr": "trace_trace_tool_calls_min{run_id=~\"$run_id\"}", "legendFormat": "tool calls min", "refId": "H" },
+            { "expr": "trace_trace_tool_calls_max{run_id=~\"$run_id\"}", "legendFormat": "tool calls max", "refId": "I" }
           ],
-          "title": "Tokens & Tool Calls (last req)", "type": "stat"
+          "title": "Tokens & Tool Calls (all traces)", "type": "stat"
         },
         {
           "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
