@@ -14,6 +14,7 @@ Usage:
       --namespace llamastack-bench
 """
 import json
+import re
 import ssl
 import argparse
 import urllib.request
@@ -150,7 +151,7 @@ def main():
             suffix = parts[1] if len(parts) > 1 else ""
             labeled = extract_labeled_series(r, label_key)
             for label, points in labeled.items():
-                clean_label = label.strip("/").replace("/", "_").replace("-", "_")
+                clean_label = re.sub(r'[^a-zA-Z0-9_\-.]', '_', label.strip("/"))
                 # Flatten: gpu/utilization_pct_0  (not gpu/utilization_pct/0)
                 ts_key = safe_name(f"{tab}/{suffix}_{clean_label}")
                 ts[ts_key] = [{"step": s, "value": round(v, 6)} for s, v in points]
