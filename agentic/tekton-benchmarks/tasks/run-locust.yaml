@@ -196,6 +196,7 @@ spec:
 
         # Warmup: wait for Prometheus to discover and start scraping all targets
         WARMUP=$(params.WARMUP_SECONDS)
+        echo "$WARMUP" > "$LOCUST_OUTPUT_DIR/warmup_seconds"
         if [ "$WARMUP" -gt 0 ] 2>/dev/null; then
           echo "=============================================="
           echo "Warmup: waiting ${WARMUP}s for Prometheus scraping to stabilize"

@@ -107,7 +107,16 @@ def main():
     start = float(start_file.read_text().strip())
     end = float(end_file.read_text().strip())
     duration = end - start
-    print(f"Test window: {duration:.0f}s")
+
+    warmup_file = d / "warmup_seconds"
+    warmup = 0
+    if warmup_file.exists():
+        try:
+            warmup = int(warmup_file.read_text().strip())
+        except ValueError:
+            pass
+    query_start = start - warmup if warmup > 0 else start - 60
+    print(f"Test window: {duration:.0f}s, warmup: {warmup}s, query range: {end - query_start:.0f}s")
 
     try:
         token = Path(args.token_path).read_text().strip()
@@ -133,7 +142,7 @@ def main():
           - tab/metric_name_label    (for labeled series, underscore-joined)
         This way 'gpu/utilization_pct_0' and 'gpu/power_w_1' share the 'gpu' tab.
         """
-        r = prom_query_range(url, query, token, start, end)
+        r = prom_query_range(url, query, token, query_start, end)
         if is_labeled and label_key:
             # name is like "gpu/utilization_pct" → tab="gpu", suffix="utilization_pct"
             parts = name.split("/", 1)

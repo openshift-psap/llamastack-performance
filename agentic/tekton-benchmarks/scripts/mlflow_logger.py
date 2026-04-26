@@ -325,12 +325,12 @@ def main():
     seen = set()
     deduped = []
     for m in batch_metrics:
-        key = (m.key, m.timestamp, m.step, m.value)
+        key = (m.key, m.step)
         if key not in seen:
             seen.add(key)
             deduped.append(m)
     if len(deduped) < len(batch_metrics):
-        print(f"Deduplicated {len(batch_metrics) - len(deduped)} duplicate metrics")
+        print(f"Deduplicated {len(batch_metrics) - len(deduped)} metrics (same key+step)")
     batch_metrics = deduped
 
     print(f"\nBatch summary: {len(batch_params)} params, {len(batch_tags)} tags, {len(batch_metrics)} metrics")
