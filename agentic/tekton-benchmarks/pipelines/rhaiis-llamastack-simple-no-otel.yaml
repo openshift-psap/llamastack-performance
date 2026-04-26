@@ -80,6 +80,18 @@ spec:
     - name: SKIP_DEPLOY_RHAIIS
       type: string
       default: "false"
+    - name: SKIP_DEPLOY_POSTGRES
+      type: string
+      default: "false"
+    - name: SKIP_DEPLOY_LLAMASTACK
+      type: string
+      default: "false"
+    - name: CLEANUP_VLLM
+      type: string
+      default: "true"
+    - name: REPLICAS
+      type: string
+      default: "1"
   workspaces:
     - name: results
   tasks:
@@ -110,6 +122,8 @@ spec:
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_POSTGRES)
 
     - name: generate-prompt
       taskRef:
@@ -148,6 +162,10 @@ spec:
           value: $(params.MODEL_NAME)
         - name: DISABLE_OTEL
           value: "true"
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY_LLAMASTACK)
+        - name: REPLICAS
+          value: $(params.REPLICAS)
 
     - name: run-locust
       taskRef:
@@ -270,6 +288,6 @@ spec:
         - name: SKIP_CLEANUP
           value: $(params.SKIP_CLEANUP)
         - name: CLEANUP_VLLM
-          value: "true"
+          value: $(params.CLEANUP_VLLM)
         - name: CLEANUP_MCP
           value: "false"

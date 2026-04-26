@@ -37,6 +37,10 @@ spec:
       description: If "true", disables OpenTelemetry in LlamaStack (sets OTEL_SDK_DISABLED=true, removes collector env vars)
       type: string
       default: "false"
+    - name: REPLICAS
+      description: Number of LlamaStack replicas
+      type: string
+      default: "1"
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
@@ -107,6 +111,13 @@ spec:
             sed '/- name: POSTGRES_HOST/i\        - name: OTEL_SDK_DISABLED\n          value: "true"')
         fi
 
+        # Patch replica count
+        REPLICAS="$(params.REPLICAS)"
+        if [ "$REPLICAS" != "1" ]; then
+          echo "Setting replicas to $REPLICAS"
+          MANIFEST=$(echo "$MANIFEST" | sed "s|replicas: 1|replicas: $REPLICAS|g")
+        fi
+
         echo "Deploying LlamaStackDistribution..."
         echo "$MANIFEST" | oc apply -f - -n $(params.NAMESPACE)
         
@@ -125,6 +136,20 @@ spec:
             echo "  Operator version: $OPERATOR_VER"
             echo "  Distribution:     rh-dev (RHOAI managed)"
             echo "=============================================="
+
+            # Pin LlamaStack pods to the GPU worker node (co-locate with vLLM)
+            DEPLOY_NAME=$(oc get deployment -n $(params.NAMESPACE) -l app=llama-stack -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+            if [ -n "$DEPLOY_NAME" ]; then
+              GPU_NODE=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+              if [ -n "$GPU_NODE" ]; then
+                echo "Pinning LlamaStack ($DEPLOY_NAME) to GPU node: $GPU_NODE"
+                oc patch deployment "$DEPLOY_NAME" -n $(params.NAMESPACE) --type merge \
+                  -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"$GPU_NODE\"}}}}}" || true
+                echo "Waiting for rollout..."
+                oc rollout status deployment/"$DEPLOY_NAME" -n $(params.NAMESPACE) --timeout=120s || true
+              fi
+            fi
+
             exit 0
           fi
           sleep 5

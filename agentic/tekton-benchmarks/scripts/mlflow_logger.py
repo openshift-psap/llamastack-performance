@@ -279,7 +279,7 @@ def main():
         step = s.get("sample", 0)
         for src_key, metric_key in prom_keys:
             val = s.get(src_key, 0)
-            if val:
+            if val is not None:
                 batch_metrics.append(Metric(key=metric_key, value=val, timestamp=ts(step), step=step))
 
     # Trace per-request time-series metrics
@@ -306,7 +306,7 @@ def main():
         step = r.get("step", 0)
         for src_key, metric_key in trace_ts_keys:
             val = r.get(src_key, 0)
-            if val:
+            if val is not None:
                 batch_metrics.append(Metric(key=metric_key, value=val, timestamp=ts(step), step=step))
 
     # Prometheus query results (OTel, vLLM, GPU, Postgres, Cluster for test window)
@@ -319,7 +319,7 @@ def main():
             for point in points:
                 step = point.get("step", 0)
                 val = point.get("value", 0)
-                if val:
+                if val is not None:
                     batch_metrics.append(Metric(key=ts_name, value=val, timestamp=ts(step), step=step))
 
     seen = set()
