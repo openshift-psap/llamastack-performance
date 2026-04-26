@@ -125,24 +125,37 @@ def main():
         return s.replace("//", "/").strip("/")
 
     def query_and_store(name, query, is_labeled=False, label_key=""):
+        """Query Prometheus and store results.
+
+        MLflow groups metrics into tabs by everything before the last '/'.
+        To keep all metrics of a category in ONE tab, we use:
+          - tab/metric_name          (for simple metrics)
+          - tab/metric_name_label    (for labeled series, underscore-joined)
+        This way 'gpu/utilization_pct_0' and 'gpu/power_w_1' share the 'gpu' tab.
+        """
         r = prom_query_range(url, query, token, start, end)
         if is_labeled and label_key:
+            # name is like "gpu/utilization_pct" → tab="gpu", suffix="utilization_pct"
+            parts = name.split("/", 1)
+            tab = parts[0]
+            suffix = parts[1] if len(parts) > 1 else ""
             labeled = extract_labeled_series(r, label_key)
             for label, points in labeled.items():
-                clean_label = label.strip("/").replace("/", "_")
-                ts_name = safe_name(f"{name}/{clean_label}")
-                ts[ts_name] = [{"step": s, "value": round(v, 6)} for s, v in points]
-                agg[safe_name(f"{ts_name}/avg")] = round(avg_val(points), 6)
+                clean_label = label.strip("/").replace("/", "_").replace("-", "_")
+                # Flatten: gpu/utilization_pct_0  (not gpu/utilization_pct/0)
+                ts_key = safe_name(f"{tab}/{suffix}_{clean_label}")
+                ts[ts_key] = [{"step": s, "value": round(v, 6)} for s, v in points]
+                agg[safe_name(f"{tab}/{suffix}_{clean_label}_avg")] = round(avg_val(points), 6)
             total_points = [p for pts in labeled.values() for p in pts]
             if total_points:
-                agg[f"{name}/avg"] = round(avg_val(total_points), 6)
-                agg[f"{name}/max"] = round(max_val(total_points), 6)
+                agg[f"{tab}/{suffix}_avg"] = round(avg_val(total_points), 6)
+                agg[f"{tab}/{suffix}_max"] = round(max_val(total_points), 6)
         else:
             points = extract_values(r)
             if points:
                 ts[name] = [{"step": s, "value": round(v, 6)} for s, v in points]
-                agg[f"{name}/avg"] = round(avg_val(points), 6)
-                agg[f"{name}/max"] = round(max_val(points), 6)
+                agg[f"{name}_avg"] = round(avg_val(points), 6)
+                agg[f"{name}_max"] = round(max_val(points), 6)
 
     # --- OTel Application Metrics ---
     print("Querying OTel application metrics...")
@@ -220,11 +233,11 @@ def main():
 
     # --- Per-Pod CPU/Memory ---
     print("Querying per-pod CPU/memory...")
-    query_and_store("cluster/pod_cpu_cores",
+    query_and_store("cluster_cpu/cpu_cores",
         f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[1m])) by (pod)',
         is_labeled=True, label_key="pod")
-    query_and_store("cluster/pod_memory_bytes",
-        f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod)',
+    query_and_store("cluster_memory/memory_gib",
+        f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',
         is_labeled=True, label_key="pod")
 
     # Filter empty aggregates

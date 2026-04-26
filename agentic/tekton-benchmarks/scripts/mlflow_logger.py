@@ -263,17 +263,17 @@ def main():
 
     # Prometheus metrics (per-sample from scraper sidecar)
     prom_keys = [
-        ("pg_active_connections", "prom/pg_active_connections"),
-        ("pg_xact_commits", "prom/pg_xact_commits"),
-        ("pg_xact_rollbacks", "prom/pg_xact_rollbacks"),
-        ("pg_cache_hit_ratio", "prom/pg_cache_hit_ratio"),
-        ("pg_deadlocks", "prom/pg_deadlocks"),
-        ("pg_rows_inserted", "prom/pg_rows_inserted"),
-        ("pg_lock_count", "prom/pg_lock_count"),
-        ("vllm_requests_running", "prom/vllm_requests_running"),
-        ("vllm_requests_waiting", "prom/vllm_requests_waiting"),
-        ("vllm_gpu_cache_pct", "prom/vllm_gpu_cache_pct"),
-        ("vllm_throughput_tps", "prom/vllm_throughput_tps"),
+        ("pg_active_connections", "pg/sidecar_active_connections"),
+        ("pg_xact_commits", "pg/sidecar_xact_commits"),
+        ("pg_xact_rollbacks", "pg/sidecar_xact_rollbacks"),
+        ("pg_cache_hit_ratio", "pg/sidecar_cache_hit_ratio"),
+        ("pg_deadlocks", "pg/sidecar_deadlocks"),
+        ("pg_rows_inserted", "pg/sidecar_rows_inserted"),
+        ("pg_lock_count", "pg/sidecar_lock_count"),
+        ("vllm_requests_running", "vllm/sidecar_requests_running"),
+        ("vllm_requests_waiting", "vllm/sidecar_requests_waiting"),
+        ("vllm_gpu_cache_pct", "vllm/sidecar_gpu_cache_pct"),
+        ("vllm_throughput_tps", "vllm/sidecar_throughput_tps"),
     ]
     for s in prom:
         step = s.get("sample", 0)
@@ -284,23 +284,23 @@ def main():
 
     # Trace per-request time-series metrics
     trace_ts_keys = [
-        ("request_duration_ms", "trace/ts/request_duration_ms"),
-        ("inference_duration_ms", "trace/ts/inference_duration_ms"),
-        ("list_mcp_tools_ms", "trace/ts/list_mcp_tools_ms"),
-        ("invoke_mcp_tool_ms", "trace/ts/invoke_mcp_tool_ms"),
-        ("db_duration_ms", "trace/ts/db_duration_ms"),
-        ("db_connect_ms", "trace/ts/db_connect_ms"),
-        ("db_connect_count", "trace/ts/db_connect_count"),
-        ("db_insert_ms", "trace/ts/db_insert_ms"),
-        ("db_insert_count", "trace/ts/db_insert_count"),
-        ("db_begin_count", "trace/ts/db_begin_count"),
-        ("db_commit_count", "trace/ts/db_commit_count"),
-        ("db_rollback_count", "trace/ts/db_rollback_count"),
-        ("mcp_http_duration_ms", "trace/ts/mcp_http_duration_ms"),
-        ("ls_overhead_ms", "trace/ts/ls_overhead_ms"),
-        ("input_tokens", "trace/ts/input_tokens"),
-        ("output_tokens", "trace/ts/output_tokens"),
-        ("tool_calls", "trace/ts/tool_calls"),
+        ("request_duration_ms", "trace/request_duration_ms"),
+        ("inference_duration_ms", "trace/inference_duration_ms"),
+        ("list_mcp_tools_ms", "trace/list_mcp_tools_ms"),
+        ("invoke_mcp_tool_ms", "trace/invoke_mcp_tool_ms"),
+        ("db_duration_ms", "trace/db_duration_ms"),
+        ("db_connect_ms", "trace/db_connect_ms"),
+        ("db_connect_count", "trace/db_connect_count"),
+        ("db_insert_ms", "trace/db_insert_ms"),
+        ("db_insert_count", "trace/db_insert_count"),
+        ("db_begin_count", "trace/db_begin_count"),
+        ("db_commit_count", "trace/db_commit_count"),
+        ("db_rollback_count", "trace/db_rollback_count"),
+        ("mcp_http_duration_ms", "trace/mcp_http_duration_ms"),
+        ("ls_overhead_ms", "trace/ls_overhead_ms"),
+        ("input_tokens", "trace/input_tokens"),
+        ("output_tokens", "trace/output_tokens"),
+        ("tool_calls", "trace/tool_calls"),
     ]
     for r in trace_per_req:
         step = r.get("step", 0)

@@ -76,6 +76,9 @@ spec:
     - name: SKIP_DEPLOY
       type: string
       default: "false"
+    - name: CLEANUP_VLLM
+      type: string
+      default: "true"
   workspaces:
     - name: results
   tasks:
@@ -233,6 +236,6 @@ spec:
         - name: SKIP_CLEANUP
           value: $(params.SKIP_CLEANUP)
         - name: CLEANUP_VLLM
-          value: "true"
+          value: $(params.CLEANUP_VLLM)
         - name: CLEANUP_MCP
           value: "false"
