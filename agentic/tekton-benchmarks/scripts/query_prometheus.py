@@ -240,12 +240,21 @@ def main():
     query_and_store("pg/deadlocks_per_sec",
         f'rate(pg_stat_database_deadlocks{{namespace="{ns}", datname="llamastack"}}[1m])')
 
-    # --- Per-Pod CPU/Memory ---
+    # --- Per-Node CPU/Memory (cluster-wide, same as Grafana "Cluster CPU Usage") ---
+    print("Querying per-node CPU/memory...")
+    query_and_store("node_cpu/usage_cores",
+        'sum(rate(node_cpu_seconds_total{mode!="idle"}[1m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_memory/usage_gib",
+        '(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024',
+        is_labeled=True, label_key="instance")
+
+    # --- Per-Pod CPU/Memory (namespace-scoped) ---
     print("Querying per-pod CPU/memory...")
-    query_and_store("cluster_cpu/cpu_cores",
+    query_and_store("pod_cpu/cpu_cores",
         f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[1m])) by (pod)',
         is_labeled=True, label_key="pod")
-    query_and_store("cluster_memory/memory_gib",
+    query_and_store("pod_memory/memory_gib",
         f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',
         is_labeled=True, label_key="pod")
 
