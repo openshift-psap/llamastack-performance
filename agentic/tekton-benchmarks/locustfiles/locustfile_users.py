@@ -20,7 +20,7 @@ import json
 import random
 import threading
 from pathlib import Path
-from locust import HttpUser, task, between
+from locust import HttpUser, task, between, constant
 
 
 SYNTHETIC_PROMPTS_FILENAME = "synthetic_prompts.jsonl"
@@ -72,7 +72,7 @@ def _get_user_prompt(prompts):
 
 class ResponsesMCPUser(HttpUser):
     """Responses API with MCP tool calling — full agentic flow."""
-    wait_time = between(1, 3)
+    wait_time = constant(0)
     abstract = True
 
     def on_start(self):
@@ -121,7 +121,7 @@ class ResponsesSimpleUser(HttpUser):
     When OUTPUT_TOKENS > 0, sets max_output_tokens and passes ignore_eos + stop_token_ids
     via extra_body so LlamaStack forwards them to vLLM's chat completion call.
     """
-    wait_time = between(1, 3)
+    wait_time = constant(0)
     abstract = True
     _prompts = None
 
@@ -181,7 +181,7 @@ class ResponsesMCPBenchmarkUser(HttpUser):
     generate-mcp-prompt task. Every user calls the same tool for zero variance.
     MCP_SERVER env var points to the benchmark MCP server URL.
     """
-    wait_time = between(1, 3)
+    wait_time = constant(0)
     abstract = True
     _prompts = None
 
@@ -241,7 +241,7 @@ class ChatCompletionsUser(HttpUser):
     synthetic_prompts.jsonl to avoid vLLM prefix cache hits.
     When OUTPUT_TOKENS > 0, forces exact output length via ignore_eos and stop=null.
     """
-    wait_time = between(1, 3)
+    wait_time = constant(0)
     abstract = True
     _prompts = None
 
