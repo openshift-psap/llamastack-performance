@@ -16,7 +16,7 @@ data:
           "title": "Cluster CPU Usage", "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[1m])) by (instance)", "legendFormat": "{{instance}}" }],
+          "targets": [{ "expr": "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) by (instance)", "legendFormat": "{{instance}}" }],
           "fieldConfig": { "defaults": { "unit": "short" } }
         },
         {
@@ -51,7 +51,7 @@ data:
           "title": "Pod CPU Usage (benchmark namespace)", "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\", container!=\"POD\"}[1m])) by (pod)", "legendFormat": "{{pod}}" }],
+          "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\", container!=\"POD\"}[5m])) by (pod)", "legendFormat": "{{pod}}" }],
           "fieldConfig": { "defaults": { "unit": "short" } }
         },
         {

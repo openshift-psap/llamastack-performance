@@ -248,7 +248,7 @@ def main():
     # --- Per-Node CPU/Memory (cluster-wide, same as Grafana "Cluster CPU Usage") ---
     print("Querying per-node CPU/memory...")
     query_and_store("node_cpu/usage_cores",
-        'sum(rate(node_cpu_seconds_total{mode!="idle"}[1m])) by (instance)',
+        'sum(rate(node_cpu_seconds_total{mode!="idle"}[5m])) by (instance)',
         is_labeled=True, label_key="instance")
     query_and_store("node_memory/usage_gib",
         '(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024',
@@ -257,7 +257,7 @@ def main():
     # --- Per-Pod CPU/Memory (namespace-scoped) ---
     print("Querying per-pod CPU/memory...")
     query_and_store("pod_cpu/cpu_cores",
-        f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[1m])) by (pod)',
+        f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod)',
         is_labeled=True, label_key="pod")
     query_and_store("pod_memory/memory_gib",
         f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',
