@@ -26,7 +26,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # For checking pod status and exec (generate-prompt uses oc exec/cp into vLLM pod)
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["pods", "pods/log"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/exec"]
@@ -60,6 +60,14 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["servicemonitors"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For creating PipelineRuns from runner Jobs
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns"]
+    verbs: ["get", "list", "watch", "create"]
+  # For deleting NetworkPolicies
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "delete"]
   # For collecting cluster info in MLflow logging
   - apiGroups: ["config.openshift.io"]
     resources: ["clusterversions"]

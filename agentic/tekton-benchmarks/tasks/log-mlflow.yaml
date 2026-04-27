@@ -162,10 +162,17 @@ spec:
         if [ -n "$ISVC" ]; then
           VLLM_POD=$(oc get pod -n $NS -l serving.kserve.io/inferenceservice=$ISVC -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$VLLM_POD" ]; then
-            oc logs "$VLLM_POD" -n $NS -c kserve-container --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>&1 || true
-            echo "Captured vLLM kserve-container logs from $VLLM_POD ($(wc -l < "$RESULTS_DIR/rhaiis_vllm_logs.txt") lines)"
-            oc logs "$VLLM_POD" -n $NS -c queue-proxy --tail=5000 > "$RESULTS_DIR/rhaiis_queue_proxy_logs.txt" 2>&1 || true
-            oc logs "$VLLM_POD" -n $NS -c storage-initializer --tail=5000 > "$RESULTS_DIR/rhaiis_storage_init_logs.txt" 2>&1 || true
+            oc logs "$VLLM_POD" -n $NS -c kserve-container --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>/dev/null || \
+              oc logs "$VLLM_POD" -n $NS --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>&1 || true
+            echo "Captured vLLM logs from $VLLM_POD ($(wc -l < "$RESULTS_DIR/rhaiis_vllm_logs.txt") lines)"
+            # Only capture sidecar logs if containers exist
+            CONTAINERS=$(oc get pod "$VLLM_POD" -n $NS -o jsonpath='{.spec.containers[*].name}' 2>/dev/null || echo "")
+            if echo "$CONTAINERS" | grep -q "queue-proxy"; then
+              oc logs "$VLLM_POD" -n $NS -c queue-proxy --tail=5000 > "$RESULTS_DIR/rhaiis_queue_proxy_logs.txt" 2>&1 || true
+            fi
+            if echo "$CONTAINERS" | grep -q "storage-initializer"; then
+              oc logs "$VLLM_POD" -n $NS -c storage-initializer --tail=5000 > "$RESULTS_DIR/rhaiis_storage_init_logs.txt" 2>&1 || true
+            fi
           fi
         fi
 
