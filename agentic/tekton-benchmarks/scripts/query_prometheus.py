@@ -46,31 +46,35 @@ def prom_query_range(url, query, token, start, end, step="15s"):
         return []
 
 
-def extract_values(results):
-    """Extract (step_index, value) pairs from range query results, merging all series."""
+def extract_values(results, test_start=0):
+    """Extract (step_seconds, value) pairs from range query results.
+    step_seconds is seconds since test_start. Points before test_start are excluded."""
     all_points = []
     for series in results:
-        for i, (ts, val) in enumerate(series.get("values", [])):
+        for epoch, val in series.get("values", []):
             try:
                 v = float(val)
-                if v != float("inf") and v != float("nan"):
-                    all_points.append((i, v))
+                t = float(epoch)
+                if v != float("inf") and v != float("nan") and t >= test_start:
+                    all_points.append((int(t - test_start), v))
             except (ValueError, TypeError):
                 pass
     return all_points
 
 
-def extract_labeled_series(results, label_key):
-    """Extract per-label time-series from range query results."""
+def extract_labeled_series(results, label_key, test_start=0):
+    """Extract per-label time-series from range query results.
+    step_seconds is seconds since test_start. Points before test_start are excluded."""
     series_dict = {}
     for series in results:
         label = series.get("metric", {}).get(label_key, "unknown")
         points = []
-        for i, (ts, val) in enumerate(series.get("values", [])):
+        for epoch, val in series.get("values", []):
             try:
                 v = float(val)
-                if v != float("inf") and v != float("nan"):
-                    points.append((i, v))
+                t = float(epoch)
+                if v != float("inf") and v != float("nan") and t >= test_start:
+                    points.append((int(t - test_start), v))
             except (ValueError, TypeError):
                 pass
         if points:
@@ -149,7 +153,7 @@ def main():
             parts = name.split("/", 1)
             tab = parts[0]
             suffix = parts[1] if len(parts) > 1 else ""
-            labeled = extract_labeled_series(r, label_key)
+            labeled = extract_labeled_series(r, label_key, test_start=start)
             for label, points in labeled.items():
                 clean_label = re.sub(r'[^a-zA-Z0-9_\-.]', '_', label.strip("/"))
                 # Flatten: gpu/utilization_pct_0  (not gpu/utilization_pct/0)
@@ -161,7 +165,7 @@ def main():
                 agg[f"{tab}/{suffix}_avg"] = round(avg_val(total_points), 6)
                 agg[f"{tab}/{suffix}_max"] = round(max_val(total_points), 6)
         else:
-            points = extract_values(r)
+            points = extract_values(r, test_start=start)
             if points:
                 ts[name] = [{"step": s, "value": round(v, 6)} for s, v in points]
                 agg[f"{name}_avg"] = round(avg_val(points), 6)
