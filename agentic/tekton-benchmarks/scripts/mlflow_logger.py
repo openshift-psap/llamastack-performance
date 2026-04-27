@@ -218,13 +218,30 @@ def main():
         batch_params.append(Param(key=k, value=str(v)))
     batch_tags = [RunTag("pipeline", "tekton"), RunTag("run_source", "tekton-pipeline")]
 
-    base_ms = int(time.time() * 1000)
+    # Use actual test start time (minus warmup for Prometheus data alignment)
+    start_epoch_file = results_dir / "test_start_epoch_precise"
+    if not start_epoch_file.exists():
+        start_epoch_file = results_dir / "test_start_epoch"
+    warmup_file = results_dir / "warmup_seconds"
+    warmup_s = 0
+    if warmup_file.exists():
+        try:
+            warmup_s = int(warmup_file.read_text().strip())
+        except ValueError:
+            pass
+    if start_epoch_file.exists():
+        test_start_ms = int(float(start_epoch_file.read_text().strip()) * 1000)
+        base_ms = test_start_ms - (warmup_s * 1000)
+        print(f"Test start epoch: {test_start_ms}, warmup: {warmup_s}s, base_ms: {base_ms}")
+    else:
+        base_ms = int(time.time() * 1000)
+        print(f"WARNING: No test_start_epoch found, using current time")
     batch_metrics = []
 
     def ts(step=0):
-        """Unique timestamp per step — avoids SageMaker MLflow metric_pk collisions
-        when (key, timestamp, step, value, is_nan) would otherwise be identical."""
-        return base_ms + step
+        """Timestamp for step — base is the actual test start time so MLflow
+        charts align with Grafana. Step is added as seconds (×1000 for ms)."""
+        return base_ms + (step * 1000)
 
     # Summary metrics from metrics_collector
     for name, val in summary.items():
