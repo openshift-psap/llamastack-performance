@@ -256,8 +256,19 @@ def main():
         batch_metrics.append(Metric(key="scenario/fail_ratio_cumulative_pct", value=sample.get("fail_ratio", 0) * 100, timestamp=ts(step), step=step))
 
     # HPA metrics (per-second samples from sidecar)
+    # Sidecar starts at sample 0 during warmup; offset by warmup_s so step 0 = test start
+    warmup_file = results_dir / "warmup_seconds"
+    warmup_s = 0
+    if warmup_file.exists():
+        try:
+            warmup_s = int(warmup_file.read_text().strip())
+        except ValueError:
+            pass
+
     for s in hpa:
-        step = s.get("sample", 0)
+        step = s.get("sample", 0) - warmup_s
+        if step < 0:
+            continue
         batch_metrics.append(Metric(key="hpa/pod_count", value=s.get("pod_count", 0), timestamp=ts(step), step=step))
         avg_memory_mib = s.get("avg_memory_ki", 0) / 1024
         batch_metrics.append(Metric(key="hpa/memory_avg_mib", value=avg_memory_mib, timestamp=ts(step), step=step))
@@ -284,8 +295,13 @@ def main():
         ("vllm_gpu_cache_pct", "vllm/sidecar_gpu_cache_pct"),
         ("vllm_throughput_tps", "vllm/sidecar_throughput_tps"),
     ]
+    # Sidecar samples every 5s; offset by warmup so step 0 = test start
+    prom_warmup_samples = warmup_s // 5 if warmup_s > 0 else 0
     for s in prom:
-        step = s.get("sample", 0)
+        raw_sample = s.get("sample", 0)
+        step = (raw_sample - prom_warmup_samples) * 5
+        if step < 0:
+            continue
         for src_key, metric_key in prom_keys:
             val = s.get(src_key, 0)
             if val is not None:
