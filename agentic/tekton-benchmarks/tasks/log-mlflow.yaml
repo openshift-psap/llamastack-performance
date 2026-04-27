@@ -157,6 +157,36 @@ spec:
         echo "Collected versions:"
         cat "$RESULTS_DIR/cluster_versions.json"
 
+        # Collect vLLM/RHAIIS pod logs (all containers) for artifact storage
+        echo "Collecting inference server logs..."
+        if [ -n "$ISVC" ]; then
+          VLLM_POD=$(oc get pod -n $NS -l serving.kserve.io/inferenceservice=$ISVC -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$VLLM_POD" ]; then
+            oc logs "$VLLM_POD" -n $NS -c kserve-container --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>&1 || true
+            echo "Captured vLLM kserve-container logs from $VLLM_POD ($(wc -l < "$RESULTS_DIR/rhaiis_vllm_logs.txt") lines)"
+            oc logs "$VLLM_POD" -n $NS -c queue-proxy --tail=5000 > "$RESULTS_DIR/rhaiis_queue_proxy_logs.txt" 2>&1 || true
+            oc logs "$VLLM_POD" -n $NS -c storage-initializer --tail=5000 > "$RESULTS_DIR/rhaiis_storage_init_logs.txt" 2>&1 || true
+          fi
+        fi
+
+        # Collect ALL LlamaStack replica logs if present
+        LS_PODS=$(oc get pod -n $NS -l app=llama-stack -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$LS_PODS" ]; then
+          POD_IDX=0
+          for LS_POD in $LS_PODS; do
+            oc logs "$LS_POD" -n $NS --tail=5000 > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
+            echo "Captured LlamaStack logs from $LS_POD ($(wc -l < "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt") lines)"
+            POD_IDX=$((POD_IDX + 1))
+          done
+        fi
+
+        # Collect Postgres logs if present
+        PG_POD=$(oc get pod -n $NS -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$PG_POD" ]; then
+          oc logs "$PG_POD" -n $NS -c postgres --tail=5000 > "$RESULTS_DIR/postgres_logs.txt" 2>&1 || true
+          echo "Captured Postgres logs from $PG_POD ($(wc -l < "$RESULTS_DIR/postgres_logs.txt") lines)"
+        fi
+
     - name: analyze-traces
       image: registry.access.redhat.com/ubi9/python-311:latest
       script: |
