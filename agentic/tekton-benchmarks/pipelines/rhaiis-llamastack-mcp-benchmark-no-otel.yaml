@@ -1,14 +1,14 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: rhaiis-llamastack-mcp-benchmark
+  name: rhaiis-llamastack-mcp-benchmark-no-otel
   namespace: tekton-llamastack
 spec:
   description: |
-    Benchmark LlamaStack Responses API with deterministic MCP tool calling.
-    Deploys RHAIIS, PostgreSQL, benchmark MCP server, OTel tracing, and LlamaStack.
+    Benchmark LlamaStack Responses API with deterministic MCP tool calling — no OTel.
+    Same as rhaiis-llamastack-mcp-benchmark but with OpenTelemetry DISABLED.
+    Deploys RHAIIS, PostgreSQL, benchmark MCP server, and LlamaStack (no tracing).
     Prompts are synthetic filler + "use tool_0" suffix for zero variance across users.
-    MCP server returns tokenizer-accurate random text with configurable token counts.
   params:
     - name: NAMESPACE
       type: string
@@ -55,9 +55,6 @@ spec:
     - name: MLFLOW_RUN_NAME_PREFIX
       type: string
       default: "tekton"
-    - name: TEMPO_ENDPOINT
-      type: string
-      default: "http://tempo-tracing.openshift-tempo-operator.svc.cluster.local:3200"
     - name: INPUT_TOKENS
       type: string
       default: "100"
@@ -158,13 +155,6 @@ spec:
         - name: TOKENIZER_MODEL
           value: $(params.MCP_TOKENIZER_MODEL)
 
-    - name: deploy-tracing
-      taskRef:
-        name: deploy-tracing
-      params:
-        - name: NAMESPACE
-          value: $(params.NAMESPACE)
-
     - name: generate-prompt
       taskRef:
         name: generate-prompt
@@ -193,7 +183,6 @@ spec:
       runAfter:
         - deploy-rhaiis
         - deploy-postgres
-        - deploy-tracing
         - deploy-mcp-server
       params:
         - name: NAMESPACE
@@ -204,6 +193,8 @@ spec:
           value: $(params.NAMESPACE)
         - name: MODEL_NAME
           value: $(params.MODEL_NAME)
+        - name: DISABLE_OTEL
+          value: "true"
         - name: SKIP_DEPLOY
           value: $(params.SKIP_DEPLOY_LLAMASTACK)
         - name: REPLICAS
@@ -268,10 +259,8 @@ spec:
       params:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
-        - name: TEMPO_ENDPOINT
-          value: $(params.TEMPO_ENDPOINT)
         - name: RUN_ID
-          value: "$(params.NAMESPACE)-$(params.USERS)u-$(params.LOAD_SHAPE)-mcp"
+          value: "$(params.NAMESPACE)-$(params.USERS)u-$(params.LOAD_SHAPE)-mcp-no-otel"
 
     - name: log-mlflow
       taskRef:
@@ -290,8 +279,6 @@ spec:
           value: $(params.MLFLOW_EXPERIMENT)
         - name: MLFLOW_RUN_NAME_PREFIX
           value: $(params.MLFLOW_RUN_NAME_PREFIX)
-        - name: TEMPO_ENDPOINT
-          value: $(params.TEMPO_ENDPOINT)
         - name: USER_CLASS
           value: "ResponsesMCPBenchmarkUser"
         - name: USERS
