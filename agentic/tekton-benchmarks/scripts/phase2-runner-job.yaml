@@ -1,0 +1,223 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phase2-runner
+  namespace: tekton-llamastack
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: tekton-deployer
+      restartPolicy: Never
+      containers:
+      - name: runner
+        image: quay.io/openshift/origin-cli:latest
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+
+          # ── Configuration ────────────────────────────────────────────────
+          NAMESPACE="llamastack-bench"
+          TEKTON_NS="tekton-llamastack"
+          MODEL_NAME="qwen3-vl-30b-a3b-instruct"
+          PIPELINE="rhaiis-llamastack-simple-no-otel-benchmark"
+          PVC_NAME="qwen3-vl-model-pvc"
+          PVC_SIZE="120Gi"
+          DEPLOY_TIMEOUT="900"
+          DISTRIBUTION_NAME="llamastack-benchmark"
+          MLFLOW_EXPERIMENT="Rhaiis_llamastack_overhead"
+
+          CONCURRENCY_LEVELS="1 2 4 8 16 32 64 128"
+          REPLICA_COUNTS="1 2 4"
+          REPETITIONS=3
+          WARMUP_SECONDS=300
+          RUN_TIME_SECONDS=300
+          COOLDOWN_SECONDS=300
+          INPUT_TOKENS=50
+          OUTPUT_TOKENS=50
+
+          # Resume support: set to "USERS-REPLICAS-REP" to skip earlier runs
+          RESUME_FROM="${RESUME_FROM:-}"
+
+          # ── Helpers ──────────────────────────────────────────────────────
+          TOTAL_RUNS=72
+          RUN_COUNTER=0
+          PASS_COUNT=0
+          FAIL_COUNT=0
+          START_TIME=$(date +%s)
+
+          log() { echo "[$(date '+%H:%M:%S')] $*"; }
+
+          wait_for_pipelinerun() {
+              local name="$1"
+              log "Waiting for PipelineRun $name to complete..."
+              while true; do
+                  STATUS=$(oc get pipelinerun "$name" -n "$TEKTON_NS" \
+                      -o jsonpath='{.status.conditions[0].reason}' 2>/dev/null || echo "Pending")
+                  case "$STATUS" in
+                      Succeeded)
+                          log "PipelineRun $name SUCCEEDED"
+                          return 0
+                          ;;
+                      Failed|PipelineRunCancelled|CouldntGetPipeline|CreateRunFailed)
+                          log "PipelineRun $name FAILED (reason: $STATUS)"
+                          oc get pipelinerun "$name" -n "$TEKTON_NS" \
+                              -o jsonpath='{.status.conditions[0].message}' 2>/dev/null || true
+                          echo ""
+                          return 1
+                          ;;
+                      *)
+                          sleep 15
+                          ;;
+                  esac
+              done
+          }
+
+          elapsed_human() {
+              local secs=$1
+              printf "%dh %02dm %02ds" $((secs/3600)) $((secs%3600/60)) $((secs%60))
+          }
+
+          # ── Run matrix ───────────────────────────────────────────────────
+          log "Phase 2: LlamaStack Overhead — starting $TOTAL_RUNS runs"
+
+          SKIP_ACTIVE=false
+          if [ -n "$RESUME_FROM" ]; then
+              SKIP_ACTIVE=true
+              log "Will resume from $RESUME_FROM"
+          fi
+
+          FIRST_RUN=true
+          for USERS in $CONCURRENCY_LEVELS; do
+              for REPLICAS in $REPLICA_COUNTS; do
+                  for REP in $(seq 1 $REPETITIONS); do
+                      RUN_COUNTER=$((RUN_COUNTER + 1))
+                      RUN_TAG="${USERS}-${REPLICAS}-${REP}"
+
+                      if [ "$SKIP_ACTIVE" = true ]; then
+                          if [ "$RUN_TAG" = "$RESUME_FROM" ]; then
+                              SKIP_ACTIVE=false
+                              log "Resuming from $RUN_TAG"
+                          else
+                              log "[$RUN_COUNTER/$TOTAL_RUNS] Skipping $RUN_TAG (resume mode)"
+                              continue
+                          fi
+                      fi
+
+                      RUN_NAME="ls-overhead-${USERS}u-${REPLICAS}r-10min-exp${REP}"
+
+                      if [ "$FIRST_RUN" = false ]; then
+                          log "Cooldown: ${COOLDOWN_SECONDS}s..."
+                          sleep $COOLDOWN_SECONDS
+                      fi
+                      FIRST_RUN=false
+
+                      log "============================================================"
+                      log "[$RUN_COUNTER/$TOTAL_RUNS] $RUN_NAME"
+                      log "  Users: $USERS | Replicas: $REPLICAS | Rep: $REP/3"
+                      log "============================================================"
+
+                      ISVC_READY=$(oc get inferenceservice "$MODEL_NAME" -n "$NAMESPACE" \
+                          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+                      SKIP_RHAIIS="true"
+                      [ "$ISVC_READY" != "True" ] && SKIP_RHAIIS="false"
+
+                      PR_NAME=$(oc create -f - -n "$TEKTON_NS" -o jsonpath='{.metadata.name}' <<EOF
+          apiVersion: tekton.dev/v1
+          kind: PipelineRun
+          metadata:
+            generateName: p2-ls-${USERS}u-${REPLICAS}r-r${REP}-
+            namespace: $TEKTON_NS
+            labels:
+              phase: "2"
+              experiment: "llamastack-overhead"
+              users: "${USERS}"
+              replicas: "${REPLICAS}"
+              repetition: "${REP}"
+          spec:
+            pipelineRef:
+              name: $PIPELINE
+            taskRunTemplate:
+              serviceAccountName: tekton-deployer
+            workspaces:
+              - name: results
+                volumeClaimTemplate:
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 1Gi
+            params:
+              - name: NAMESPACE
+                value: "$NAMESPACE"
+              - name: DISTRIBUTION_NAME
+                value: "$DISTRIBUTION_NAME"
+              - name: MODEL_NAME
+                value: "$MODEL_NAME"
+              - name: MODEL
+                value: "vllm-inference/$MODEL_NAME"
+              - name: USERS
+                value: "$USERS"
+              - name: SPAWN_RATE
+                value: "$USERS"
+              - name: RUN_TIME_SECONDS
+                value: "$RUN_TIME_SECONDS"
+              - name: INPUT_TOKENS
+                value: "$INPUT_TOKENS"
+              - name: OUTPUT_TOKENS
+                value: "$OUTPUT_TOKENS"
+              - name: WARMUP_SECONDS
+                value: "$WARMUP_SECONDS"
+              - name: LOAD_SHAPE
+                value: "steady"
+              - name: ENABLE_MLFLOW
+                value: "true"
+              - name: MLFLOW_EXPERIMENT
+                value: "$MLFLOW_EXPERIMENT"
+              - name: MLFLOW_RUN_NAME_PREFIX
+                value: "$RUN_NAME"
+              - name: PVC_NAME
+                value: "$PVC_NAME"
+              - name: PVC_SIZE
+                value: "$PVC_SIZE"
+              - name: DEPLOY_TIMEOUT
+                value: "$DEPLOY_TIMEOUT"
+              - name: SKIP_DEPLOY_RHAIIS
+                value: "$SKIP_RHAIIS"
+              - name: SKIP_DEPLOY_POSTGRES
+                value: "false"
+              - name: SKIP_DEPLOY_LLAMASTACK
+                value: "false"
+              - name: SKIP_CLEANUP
+                value: "false"
+              - name: CLEANUP_VLLM
+                value: "true"
+              - name: REPLICAS
+                value: "$REPLICAS"
+          EOF
+                      )
+
+                      log "Created PipelineRun: $PR_NAME"
+
+                      if wait_for_pipelinerun "$PR_NAME"; then
+                          PASS_COUNT=$((PASS_COUNT + 1))
+                          log "PASS [$RUN_COUNTER/$TOTAL_RUNS] $RUN_NAME"
+                      else
+                          FAIL_COUNT=$((FAIL_COUNT + 1))
+                          log "FAIL [$RUN_COUNTER/$TOTAL_RUNS] $RUN_NAME"
+                      fi
+
+                      ELAPSED=$(($(date +%s) - START_TIME))
+                      log "Progress: $RUN_COUNTER/$TOTAL_RUNS | Elapsed: $(elapsed_human $ELAPSED)"
+                      echo ""
+                  done
+              done
+          done
+
+          TOTAL_ELAPSED=$(($(date +%s) - START_TIME))
+          log "============================================================"
+          log "Phase 2 Complete"
+          log "Passed: $PASS_COUNT | Failed: $FAIL_COUNT | Time: $(elapsed_human $TOTAL_ELAPSED)"
+          log "============================================================"
+          [ $FAIL_COUNT -gt 0 ] && exit 1 || exit 0
