@@ -51,8 +51,8 @@ spec:
       name: rh-dev
     storage:
       size: 20Gi
-    network:
-      allowedFrom:
-        namespaces:
-          - "NAMESPACE_PLACEHOLDER"
-          - "tekton-llamastack"
+  network:
+    allowedFrom:
+      namespaces:
+        - "NAMESPACE_PLACEHOLDER"
+        - "tekton-llamastack"
