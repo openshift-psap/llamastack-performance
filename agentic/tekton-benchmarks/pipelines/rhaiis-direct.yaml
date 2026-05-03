@@ -79,9 +79,6 @@ spec:
     - name: CLEANUP_VLLM
       type: string
       default: "true"
-    - name: USER_CLASS
-      type: string
-      default: "ChatCompletionsUser"
   workspaces:
     - name: results
   tasks:
@@ -140,7 +137,7 @@ spec:
         - name: HOST
           value: "http://$(params.MODEL_NAME)-predictor.$(params.NAMESPACE).svc.cluster.local:80"
         - name: USER_CLASS
-          value: $(params.USER_CLASS)
+          value: "ChatCompletionsUser"
         - name: USERS
           value: $(params.USERS)
         - name: SPAWN_RATE
@@ -202,7 +199,7 @@ spec:
         - name: MLFLOW_RUN_NAME_PREFIX
           value: $(params.MLFLOW_RUN_NAME_PREFIX)
         - name: USER_CLASS
-          value: $(params.USER_CLASS)
+          value: "ChatCompletionsUser"
         - name: USERS
           value: $(params.USERS)
         - name: SPAWN_RATE
