@@ -149,7 +149,6 @@ class ResponsesSimpleUser(HttpUser):
             "model": self.model,
             "input": prompt,
             "stream": False,
-            "store": False,
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
