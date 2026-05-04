@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--service-name", default="llamastack")
     parser.add_argument("--namespace", required=True, help="Kubernetes namespace to filter traces")
     parser.add_argument("--search-window-buffer", type=int, default=120)
-    parser.add_argument("--max-traces", type=int, default=1000)
+    parser.add_argument("--max-traces", type=int, default=10000)
     return parser.parse_args()
 
 
