@@ -41,6 +41,22 @@ spec:
       description: Number of LlamaStack replicas
       type: string
       default: "1"
+    - name: ENABLE_HPA
+      description: "If 'true', creates a HorizontalPodAutoscaler for LlamaStack"
+      type: string
+      default: "false"
+    - name: HPA_MIN_REPLICAS
+      description: Minimum replicas for HPA
+      type: string
+      default: "1"
+    - name: HPA_MAX_REPLICAS
+      description: Maximum replicas for HPA
+      type: string
+      default: "4"
+    - name: HPA_MEMORY_TARGET
+      description: Target memory utilization percentage for HPA scaling
+      type: string
+      default: "75"
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
@@ -148,6 +164,40 @@ spec:
                 echo "Waiting for rollout..."
                 oc rollout status deployment/"$DEPLOY_NAME" -n $(params.NAMESPACE) --timeout=120s || true
               fi
+            fi
+
+            # Create HPA if enabled
+            ENABLE_HPA="$(params.ENABLE_HPA)"
+            if [ "$ENABLE_HPA" = "true" ] && [ -n "$DEPLOY_NAME" ]; then
+              HPA_MIN="$(params.HPA_MIN_REPLICAS)"
+              HPA_MAX="$(params.HPA_MAX_REPLICAS)"
+              HPA_MEM="$(params.HPA_MEMORY_TARGET)"
+              echo ""
+              echo "Creating HPA for $DEPLOY_NAME (memory target: ${HPA_MEM}%, min: $HPA_MIN, max: $HPA_MAX)"
+
+              cat <<HPAEOF | oc apply -f - -n $(params.NAMESPACE)
+        apiVersion: autoscaling/v2
+        kind: HorizontalPodAutoscaler
+        metadata:
+          name: $(params.DISTRIBUTION_NAME)-hpa
+        spec:
+          scaleTargetRef:
+            apiVersion: apps/v1
+            kind: Deployment
+            name: $DEPLOY_NAME
+          minReplicas: $HPA_MIN
+          maxReplicas: $HPA_MAX
+          metrics:
+            - type: Resource
+              resource:
+                name: memory
+                target:
+                  type: Utilization
+                  averageUtilization: $HPA_MEM
+        HPAEOF
+
+              echo "HPA created:"
+              oc get hpa $(params.DISTRIBUTION_NAME)-hpa -n $(params.NAMESPACE)
             fi
 
             exit 0

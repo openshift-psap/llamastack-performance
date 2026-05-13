@@ -1,0 +1,60 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: benchmark-poisson-simple-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: rhaiis-llamastack-simple-no-otel-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  params:
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
+    - name: MODEL_NAME
+      value: "llama-32-3b-instruct"
+    - name: USERS
+      value: "128"
+    - name: SPAWN_RATE
+      value: "20"
+    - name: RUN_TIME_SECONDS
+      value: "600"
+    - name: MODEL
+      value: "vllm-inference/llama-32-3b-instruct"
+    - name: PROMPT
+      value: "What is the capital of France?"
+    - name: LOAD_SHAPE
+      value: "poisson"
+    - name: WARMUP_SECONDS
+      value: "300"
+    - name: EXTRA_ENV
+      value: |
+        POISSON_LAMBDA=10
+        POISSON_RAMP_SECONDS=360
+        POISSON_MIN_USERS=1
+    - name: INPUT_TOKENS
+      value: "50"
+    - name: OUTPUT_TOKENS
+      value: "50"
+    - name: ENABLE_HPA
+      value: "true"
+    - name: HPA_MIN_REPLICAS
+      value: "1"
+    - name: HPA_MAX_REPLICAS
+      value: "4"
+    - name: HPA_MEMORY_TARGET
+      value: "75"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "llamastack-tekton-pipeline"

@@ -92,6 +92,18 @@ spec:
     - name: REPLICAS
       type: string
       default: "1"
+    - name: ENABLE_HPA
+      type: string
+      default: "false"
+    - name: HPA_MIN_REPLICAS
+      type: string
+      default: "1"
+    - name: HPA_MAX_REPLICAS
+      type: string
+      default: "4"
+    - name: HPA_MEMORY_TARGET
+      type: string
+      default: "75"
   workspaces:
     - name: results
   tasks:
@@ -166,6 +178,14 @@ spec:
           value: $(params.SKIP_DEPLOY_LLAMASTACK)
         - name: REPLICAS
           value: $(params.REPLICAS)
+        - name: ENABLE_HPA
+          value: $(params.ENABLE_HPA)
+        - name: HPA_MIN_REPLICAS
+          value: $(params.HPA_MIN_REPLICAS)
+        - name: HPA_MAX_REPLICAS
+          value: $(params.HPA_MAX_REPLICAS)
+        - name: HPA_MEMORY_TARGET
+          value: $(params.HPA_MEMORY_TARGET)
 
     - name: run-locust
       taskRef:

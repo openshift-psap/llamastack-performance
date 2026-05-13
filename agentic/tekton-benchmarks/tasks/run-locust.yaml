@@ -39,7 +39,7 @@ spec:
       type: string
     - name: LOAD_SHAPE
       default: "steady"
-      description: "Load shape: steady | spike | realistic | custom"
+      description: "Load shape: steady | spike | realistic | custom | poisson"
       type: string
     - name: LOCUST_IMAGE
       default: "quay.io/rh-ee-tosokin/locust-openai:v2-mlflow"
@@ -168,6 +168,7 @@ spec:
         cp /configmap/shapes_spike.py /tmp/locustfiles/shapes/spike.py
         cp /configmap/shapes_realistic.py /tmp/locustfiles/shapes/realistic.py
         cp /configmap/shapes_custom.py /tmp/locustfiles/shapes/custom.py
+        cp /configmap/shapes_poisson.py /tmp/locustfiles/shapes/poisson.py
         cp /configmap/hooks_init.py /tmp/locustfiles/hooks/__init__.py
         cp /configmap/hooks_metrics_collector.py /tmp/locustfiles/hooks/metrics_collector.py
 
