@@ -55,6 +55,7 @@ spec:
           --from-file=shapes_spike.py=shapes/spike.py \
           --from-file=shapes_realistic.py=shapes/realistic.py \
           --from-file=shapes_custom.py=shapes/custom.py \
+          --from-file=shapes_poisson.py=shapes/poisson.py \
           --from-file=hooks_init.py=hooks/__init__.py \
           --from-file=hooks_metrics_collector.py=hooks/metrics_collector.py \
           --dry-run=client -o yaml | \

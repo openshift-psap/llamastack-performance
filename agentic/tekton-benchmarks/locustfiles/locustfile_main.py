@@ -13,7 +13,7 @@ Environment Variables:
     MCP_SERVER         - MCP server URL (for ResponsesMCPUser)
     MODEL              - Model name (default: vllm-inference/llama-32-3b-instruct)
     PROMPT             - Test prompt
-    LOAD_SHAPE         - Shape: steady | spike | realistic | custom
+    LOAD_SHAPE         - Shape: steady | spike | realistic | custom | poisson
     MLFLOW_URL         - MLflow tracking server URL (optional)
     MLFLOW_EXPERIMENT  - MLflow experiment name (default: llamastack-benchmarks)
 """
@@ -59,6 +59,8 @@ elif shape_name == "realistic":
     from shapes.realistic import RealisticShape
 elif shape_name == "custom":
     from shapes.custom import CustomShape
+elif shape_name == "poisson":
+    from shapes.poisson import PoissonShape
 else:
     print(f"WARNING: Unknown shape '{shape_name}', using steady")
     from shapes.steady import SteadyShape
