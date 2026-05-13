@@ -168,36 +168,20 @@ spec:
 
             # Create HPA if enabled
             ENABLE_HPA="$(params.ENABLE_HPA)"
-            if [ "$ENABLE_HPA" = "true" ] && [ -n "$DEPLOY_NAME" ]; then
+            if [ "$ENABLE_HPA" = "true" ]; then
               HPA_MIN="$(params.HPA_MIN_REPLICAS)"
               HPA_MAX="$(params.HPA_MAX_REPLICAS)"
               HPA_MEM="$(params.HPA_MEMORY_TARGET)"
               echo ""
-              echo "Creating HPA for $DEPLOY_NAME (memory target: ${HPA_MEM}%, min: $HPA_MIN, max: $HPA_MAX)"
+              echo "Enabling autoscaling via LlamaStackDistribution CR (memory: ${HPA_MEM}%, min: $HPA_MIN, max: $HPA_MAX)"
 
-              cat <<HPAEOF | oc apply -f - -n $(params.NAMESPACE)
-        apiVersion: autoscaling/v2
-        kind: HorizontalPodAutoscaler
-        metadata:
-          name: $(params.DISTRIBUTION_NAME)-hpa
-        spec:
-          scaleTargetRef:
-            apiVersion: apps/v1
-            kind: Deployment
-            name: $DEPLOY_NAME
-          minReplicas: $HPA_MIN
-          maxReplicas: $HPA_MAX
-          metrics:
-            - type: Resource
-              resource:
-                name: memory
-                target:
-                  type: Utilization
-                  averageUtilization: $HPA_MEM
-        HPAEOF
+              oc patch llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --type merge \
+                -p "{\"spec\":{\"server\":{\"autoscaling\":{\"minReplicas\":$HPA_MIN,\"maxReplicas\":$HPA_MAX,\"targetMemoryUtilizationPercentage\":$HPA_MEM}}}}"
 
-              echo "HPA created:"
-              oc get hpa $(params.DISTRIBUTION_NAME)-hpa -n $(params.NAMESPACE)
+              echo "Waiting for operator to reconcile autoscaling..."
+              sleep 15
+              echo "HPA status:"
+              oc get hpa -n $(params.NAMESPACE) 2>/dev/null || echo "  (no HPA found yet — operator may still be reconciling)"
             fi
 
             exit 0
