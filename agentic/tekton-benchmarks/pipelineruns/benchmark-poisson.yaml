@@ -22,7 +22,7 @@ spec:
     - name: DISTRIBUTION_NAME
       value: "llamastack-benchmark"
     - name: MODEL_NAME
-      value: "llama-32-3b-instruct"
+      value: "qwen3-vl-30b-a3b-instruct"
     - name: USERS
       value: "128"
     - name: SPAWN_RATE
@@ -30,7 +30,7 @@ spec:
     - name: RUN_TIME_SECONDS
       value: "600"
     - name: MODEL
-      value: "vllm-inference/llama-32-3b-instruct"
+      value: "vllm-inference/qwen3-vl-30b-a3b-instruct"
     - name: PROMPT
       value: "What is the capital of France?"
     - name: LOAD_SHAPE
@@ -40,7 +40,7 @@ spec:
     - name: EXTRA_ENV
       value: |
         POISSON_LAMBDA=10
-        POISSON_RAMP_SECONDS=360
+        POISSON_HOLD_SECONDS=120
         POISSON_MIN_USERS=1
     - name: INPUT_TOKENS
       value: "50"
