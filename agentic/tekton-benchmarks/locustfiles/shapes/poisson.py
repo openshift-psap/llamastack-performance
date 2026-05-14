@@ -16,6 +16,7 @@ Configuration via environment variables:
     SPAWN_RATE:            Max users to spawn per second (default: 10)
     RUN_TIME_SECONDS:      Total test duration in seconds (default: 600)
     POISSON_LAMBDA:        λ parameter — controls curve steepness (default: 10)
+    POISSON_RISE_SECONDS:  Seconds for the rise phase (default: 0 = auto from remaining time)
     POISSON_HOLD_SECONDS:  Seconds to hold at peak between rise and fall (default: 120)
     POISSON_MIN_USERS:     Minimum users at the tails (default: 1)
 """
@@ -46,9 +47,14 @@ class PoissonShape(LoadTestShape):
         self._dist = poisson(mu=self.lam)
         self._pmf_peak = self._dist.pmf(int(self.lam))
 
+        rise_env = int(os.environ.get("POISSON_RISE_SECONDS", "0"))
         remaining = self.run_time - self.hold_seconds
-        self.rise_seconds = int(remaining * 0.4)
-        self.fall_seconds = remaining - self.rise_seconds
+        if rise_env > 0:
+            self.rise_seconds = rise_env
+            self.fall_seconds = remaining - rise_env
+        else:
+            self.rise_seconds = remaining // 2
+            self.fall_seconds = remaining - self.rise_seconds
 
         self.t_hold_start = self.rise_seconds
         self.t_fall_start = self.rise_seconds + self.hold_seconds
