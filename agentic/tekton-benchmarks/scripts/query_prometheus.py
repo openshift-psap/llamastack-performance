@@ -31,7 +31,32 @@ def parse_args():
     return parser.parse_args()
 
 
-def prom_query_range(url, query, token, start, end, step="15s"):
+def compute_step(duration_seconds):
+    """Choose query step size based on test duration.
+    Short tests keep fine granularity; long tests use coarser steps
+    to stay within thanos-querier response limits (~11,000 points max)."""
+    if duration_seconds <= 3600:       # ≤1h  → 15s step (~240 points)
+        return "15s"
+    elif duration_seconds <= 14400:    # ≤4h  → 30s step (~480-1800 points)
+        return "30s"
+    elif duration_seconds <= 86400:    # ≤24h → 60s step (~1440-… points)
+        return "60s"
+    else:                              # >24h → 300s step (~288-720 points/day)
+        return "300s"
+
+
+def compute_timeout(duration_seconds):
+    """Scale HTTP timeout with test duration. Short tests use 30s,
+    long tests get up to 180s to allow thanos-querier time to process."""
+    if duration_seconds <= 3600:
+        return 30
+    elif duration_seconds <= 86400:
+        return 90
+    else:
+        return 180
+
+
+def prom_query_range(url, query, token, start, end, step="15s", timeout=30):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -39,11 +64,28 @@ def prom_query_range(url, query, token, start, end, step="15s"):
     req = urllib.request.Request(f"{url}/api/v1/query_range?{params}",
                                  headers={"Authorization": f"Bearer {token}"})
     try:
-        resp = urllib.request.urlopen(req, context=ctx, timeout=30)
+        resp = urllib.request.urlopen(req, context=ctx, timeout=timeout)
         data = json.loads(resp.read())
+        if data.get("status") != "success":
+            print(f"    WARNING: query status={data.get('status')}: {data.get('error', '')}")
         return data.get("data", {}).get("result", [])
     except Exception as e:
-        return []
+        print(f"    WARNING: query failed ({e}), retrying with larger step...")
+        fallback_step_s = int(step.rstrip("s")) * 4
+        fallback_params = urllib.parse.urlencode({
+            "query": query, "start": int(start), "end": int(end),
+            "step": f"{fallback_step_s}s"
+        })
+        req2 = urllib.request.Request(f"{url}/api/v1/query_range?{fallback_params}",
+                                      headers={"Authorization": f"Bearer {token}"})
+        try:
+            resp2 = urllib.request.urlopen(req2, context=ctx, timeout=timeout * 2)
+            data2 = json.loads(resp2.read())
+            print(f"    Retry succeeded with step={fallback_step_s}s")
+            return data2.get("data", {}).get("result", [])
+        except Exception as e2:
+            print(f"    ERROR: retry also failed ({e2})")
+            return []
 
 
 def extract_values(results, test_start=0):
@@ -121,7 +163,11 @@ def main():
         except ValueError:
             pass
     query_start = start - warmup if warmup > 0 else start - 60
-    print(f"Test window: {duration:.0f}s, warmup: {warmup}s, query range: {end - query_start:.0f}s")
+    query_range = end - query_start
+    step = compute_step(query_range)
+    timeout = compute_timeout(query_range)
+    print(f"Test window: {duration:.0f}s ({duration/3600:.1f}h), warmup: {warmup}s, query range: {query_range:.0f}s")
+    print(f"Auto-tuned: step={step}, timeout={timeout}s")
 
     try:
         token = Path(args.token_path).read_text().strip()
@@ -147,7 +193,7 @@ def main():
           - tab/metric_name_label    (for labeled series, underscore-joined)
         This way 'gpu/utilization_pct_0' and 'gpu/power_w_1' share the 'gpu' tab.
         """
-        r = prom_query_range(url, query, token, query_start, end)
+        r = prom_query_range(url, query, token, query_start, end, step=step, timeout=timeout)
         if is_labeled and label_key:
             # name is like "gpu/utilization_pct" → tab="gpu", suffix="utilization_pct"
             parts = name.split("/", 1)
