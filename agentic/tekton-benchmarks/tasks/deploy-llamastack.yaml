@@ -17,6 +17,10 @@ spec:
       description: Path to LlamaStackDistribution manifest
       type: string
       default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/llamastack.yaml"
+    - name: HPA_MANIFEST_PATH
+      description: Path to HPA manifest template
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/hpa.yaml"
     - name: DISTRIBUTION_NAME
       description: Name of the LlamaStackDistribution
       type: string
@@ -54,9 +58,13 @@ spec:
       type: string
       default: "4"
     - name: HPA_MEMORY_TARGET
-      description: Target memory utilization percentage for HPA scaling
+      description: Target memory utilization percentage for HPA scaling (0 to disable memory metric)
       type: string
       default: "75"
+    - name: HPA_CPU_TARGET
+      description: Target CPU utilization percentage for HPA scaling (0 to disable CPU metric)
+      type: string
+      default: "0"
   steps:
     - name: deploy-llamastack
       image: quay.io/openshift/origin-cli:latest
@@ -168,20 +176,44 @@ spec:
 
             # Create HPA if enabled
             ENABLE_HPA="$(params.ENABLE_HPA)"
-            if [ "$ENABLE_HPA" = "true" ]; then
+            if [ "$ENABLE_HPA" = "true" ] && [ -n "$DEPLOY_NAME" ]; then
               HPA_MIN="$(params.HPA_MIN_REPLICAS)"
               HPA_MAX="$(params.HPA_MAX_REPLICAS)"
               HPA_MEM="$(params.HPA_MEMORY_TARGET)"
+              HPA_CPU="$(params.HPA_CPU_TARGET)"
               echo ""
-              echo "Enabling autoscaling via LlamaStackDistribution CR (memory: ${HPA_MEM}%, min: $HPA_MIN, max: $HPA_MAX)"
 
-              oc patch llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --type merge \
-                -p "{\"spec\":{\"server\":{\"autoscaling\":{\"minReplicas\":$HPA_MIN,\"maxReplicas\":$HPA_MAX,\"targetMemoryUtilizationPercentage\":$HPA_MEM}}}}"
+              # Build metrics array based on which targets are enabled
+              METRICS=""
+              if [ "$HPA_MEM" -gt 0 ] 2>/dev/null; then
+                METRICS="${METRICS}{\"type\":\"Resource\",\"resource\":{\"name\":\"memory\",\"target\":{\"type\":\"Utilization\",\"averageUtilization\":$HPA_MEM}}},"
+                echo "  Memory target: ${HPA_MEM}%"
+              fi
+              if [ "$HPA_CPU" -gt 0 ] 2>/dev/null; then
+                METRICS="${METRICS}{\"type\":\"Resource\",\"resource\":{\"name\":\"cpu\",\"target\":{\"type\":\"Utilization\",\"averageUtilization\":$HPA_CPU}}},"
+                echo "  CPU target: ${HPA_CPU}%"
+              fi
+              METRICS="${METRICS%,}"
 
-              echo "Waiting for operator to reconcile autoscaling..."
-              sleep 15
-              echo "HPA status:"
-              oc get hpa -n $(params.NAMESPACE) 2>/dev/null || echo "  (no HPA found yet — operator may still be reconciling)"
+              if [ -z "$METRICS" ]; then
+                echo "WARNING: HPA enabled but no metric targets set (HPA_MEMORY_TARGET and HPA_CPU_TARGET are both 0)"
+              else
+                echo "Creating HPA for $DEPLOY_NAME (min: $HPA_MIN, max: $HPA_MAX)"
+
+                HPA_MANIFEST=$(curl -sL $(params.HPA_MANIFEST_PATH))
+                HPA_MANIFEST=$(echo "$HPA_MANIFEST" | \
+                  sed "s|name: HPA_NAME|name: $(params.DISTRIBUTION_NAME)-hpa|g" | \
+                  sed "s|name: DEPLOY_NAME|name: $DEPLOY_NAME|g" | \
+                  sed "s|minReplicas: HPA_MIN|minReplicas: $HPA_MIN|g" | \
+                  sed "s|maxReplicas: HPA_MAX|maxReplicas: $HPA_MAX|g" | \
+                  sed "s|metrics: \[HPA_METRICS\]|metrics: [$METRICS]|g")
+                echo "$HPA_MANIFEST" | oc apply -f - -n $(params.NAMESPACE)
+
+                echo "Waiting for HPA to be recognized..."
+                sleep 10
+                echo "HPA status:"
+                oc get hpa -n $(params.NAMESPACE)
+              fi
             fi
 
             exit 0

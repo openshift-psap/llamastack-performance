@@ -104,6 +104,9 @@ spec:
     - name: HPA_MEMORY_TARGET
       type: string
       default: "75"
+    - name: HPA_CPU_TARGET
+      type: string
+      default: "0"
   workspaces:
     - name: results
   tasks:
@@ -186,6 +189,8 @@ spec:
           value: $(params.HPA_MAX_REPLICAS)
         - name: HPA_MEMORY_TARGET
           value: $(params.HPA_MEMORY_TARGET)
+        - name: HPA_CPU_TARGET
+          value: $(params.HPA_CPU_TARGET)
 
     - name: run-locust
       taskRef:

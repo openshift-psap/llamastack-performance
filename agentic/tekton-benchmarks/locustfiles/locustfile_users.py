@@ -17,6 +17,7 @@ Token profile control (ChatCompletionsUser and ResponsesSimpleUser):
 import os
 import sys
 import json
+import time
 import random
 import threading
 from pathlib import Path
@@ -29,7 +30,9 @@ SYNTHETIC_PROMPT_FILENAME = "synthetic_prompt.txt"
 _user_counter = 0
 _user_counter_lock = threading.Lock()
 
-print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
+CONNECTION_TTL = int(os.environ.get("CONNECTION_TTL_SECONDS", "0"))
+
+print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, CONNECTION_TTL={CONNECTION_TTL}s, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
 
 
 def _load_prompts():
@@ -68,6 +71,24 @@ def _get_user_prompt(prompts):
     prompt = prompts[idx % len(prompts)]
     print(f"[prompt-loader] User {idx} assigned prompt {idx % len(prompts)}/{len(prompts)} ({len(prompt)} chars)", file=sys.stderr, flush=True)
     return prompt
+
+
+def _maybe_recycle_connection(user):
+    """Close and reopen the HTTP session if CONNECTION_TTL_SECONDS has elapsed.
+
+    K8s Services balance at connection establishment. Without recycling,
+    users that connected to pod-1 will send ALL requests there even after
+    HPA adds pod-2/3/4. Recycling forces a new TCP connection which the
+    Service can route to any ready pod."""
+    if CONNECTION_TTL <= 0:
+        return
+    now = time.monotonic()
+    if not hasattr(user, '_conn_created_at'):
+        user._conn_created_at = now
+        return
+    if now - user._conn_created_at >= CONNECTION_TTL:
+        user.client.close()
+        user._conn_created_at = now
 
 
 class ResponsesMCPUser(HttpUser):
@@ -111,6 +132,7 @@ class ResponsesMCPUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+        _maybe_recycle_connection(self)
 
 
 class ResponsesSimpleUser(HttpUser):
@@ -172,6 +194,7 @@ class ResponsesSimpleUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+        _maybe_recycle_connection(self)
 
 
 class ResponsesMCPBenchmarkUser(HttpUser):
@@ -232,6 +255,7 @@ class ResponsesMCPBenchmarkUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+        _maybe_recycle_connection(self)
 
 
 class ChatCompletionsUser(HttpUser):
@@ -292,3 +316,4 @@ class ChatCompletionsUser(HttpUser):
                     response.failure("Invalid JSON response")
             else:
                 response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+        _maybe_recycle_connection(self)

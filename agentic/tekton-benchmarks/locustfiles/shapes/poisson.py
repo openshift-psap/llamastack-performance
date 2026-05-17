@@ -19,6 +19,9 @@ Configuration via environment variables:
     POISSON_RISE_SECONDS:  Seconds for the rise phase (default: 0 = auto from remaining time)
     POISSON_HOLD_SECONDS:  Seconds to hold at peak between rise and fall (default: 120)
     POISSON_MIN_USERS:     Minimum users at the tails (default: 1)
+    POISSON_FALL_K_MULT:   Fall tail extends to λ * this multiplier (default: 3).
+                           Lower values = gentler decay. 1.8 gives ~6% at end.
+                           3.0 gives ~0% by 40% through fall (original behavior).
 """
 import os
 from scipy.stats import poisson
@@ -43,6 +46,7 @@ class PoissonShape(LoadTestShape):
         self.lam = float(os.environ.get("POISSON_LAMBDA", "10"))
         self.hold_seconds = int(os.environ.get("POISSON_HOLD_SECONDS", "120"))
         self.min_users = int(os.environ.get("POISSON_MIN_USERS", "1"))
+        self.fall_k_mult = float(os.environ.get("POISSON_FALL_K_MULT", "3"))
 
         self._dist = poisson(mu=self.lam)
         self._pmf_peak = self._dist.pmf(int(self.lam))
@@ -62,7 +66,7 @@ class PoissonShape(LoadTestShape):
 
         self.k_rise_max = self.lam
         self.k_fall_start = self.lam
-        self.k_fall_end = 3 * self.lam
+        self.k_fall_end = self.fall_k_mult * self.lam
 
         print(f"PoissonShape plan (PMF with hold):")
         print(f"  Phase 1 [0s-{self.t_hold_start}s]:     Rise (k=0..{self.k_rise_max:.0f})")

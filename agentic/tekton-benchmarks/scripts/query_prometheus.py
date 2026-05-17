@@ -367,6 +367,36 @@ def main():
         '(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024',
         is_labeled=True, label_key="instance")
 
+    # --- Endpoint Readiness (when pods joined the Service) ---
+    print("Querying endpoint readiness...")
+    query_and_store("endpoint/ready",
+        f'kube_endpoint_address_available{{namespace="{ns}"}}',
+        is_labeled=True, label_key="pod")
+    query_and_store("endpoint/not_ready",
+        f'kube_endpoint_address_not_ready{{namespace="{ns}"}}',
+        is_labeled=True, label_key="pod")
+
+    # --- Pod Lifecycle (scale-down investigation) ---
+    print("Querying pod lifecycle metrics...")
+    query_and_store("pod_lifecycle/phase",
+        f'kube_pod_status_phase{{namespace="{ns}", pod=~".*llamastack.*"}}',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_lifecycle/ready",
+        f'kube_pod_status_ready{{namespace="{ns}", pod=~".*llamastack.*", condition="true"}}',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_lifecycle/restarts",
+        f'kube_pod_container_status_restarts_total{{namespace="{ns}", pod=~".*llamastack.*"}}',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_lifecycle/terminating",
+        f'kube_pod_status_reason{{namespace="{ns}", pod=~".*llamastack.*", reason="Evicted"}}',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_lifecycle/container_terminated",
+        f'kube_pod_container_status_terminated_reason{{namespace="{ns}", pod=~".*llamastack.*"}}',
+        is_labeled=True, label_key="reason")
+    query_and_store("pod_lifecycle/container_waiting",
+        f'kube_pod_container_status_waiting_reason{{namespace="{ns}", pod=~".*llamastack.*"}}',
+        is_labeled=True, label_key="reason")
+
     # --- Per-Pod CPU/Memory (namespace-scoped) ---
     print("Querying per-pod CPU/memory...")
     query_and_store("pod_cpu/cpu_cores",

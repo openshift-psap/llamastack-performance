@@ -1,0 +1,16 @@
+# HPA template for LlamaStack autoscaling.
+# Placeholders are replaced by the deploy-llamastack task:
+#   HPA_NAME, DEPLOY_NAME, HPA_MIN, HPA_MAX, HPA_METRICS
+# Uses Kubernetes default behavior (5min stabilization, no pod-removal limit).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: HPA_NAME
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: DEPLOY_NAME
+  minReplicas: HPA_MIN
+  maxReplicas: HPA_MAX
+  metrics: [HPA_METRICS]

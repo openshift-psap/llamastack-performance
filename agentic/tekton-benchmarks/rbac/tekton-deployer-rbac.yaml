@@ -37,7 +37,7 @@ rules:
     verbs: ["get", "list"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
   # For OTel Operator CR
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]

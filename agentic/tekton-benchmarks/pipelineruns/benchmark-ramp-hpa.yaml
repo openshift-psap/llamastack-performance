@@ -1,0 +1,82 @@
+# HPA reference scenario — reusable for all HPA scaling metric investigations.
+#
+# This scenario stays FIXED. Only the HPA configuration changes between runs:
+#   - Run with HPA_MEMORY_TARGET=75, HPA_CPU_TARGET=0  → prove memory doesn't work
+#   - Run with HPA_MEMORY_TARGET=0,  HPA_CPU_TARGET=60 → test CPU-based scaling
+#   - Run with custom metrics → test alternatives
+#
+# Scenario (Poisson, total 3000s = 50 min):
+#   Rise:  1350s — slow Poisson PMF growth (1 → 256 users, λ=10)
+#   Hold:   300s — steady state at peak
+#   Fall:  1350s — Poisson PMF tail decay (256 → 1 user)
+#
+# CONNECTION_TTL_SECONDS=60 — redistributes connections to new pods every 60s
+# HPA_POST_TEST_SECONDS=120 — captures post-test scale-down behavior
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: benchmark-ramp-hpa-
+  namespace: tekton-llamastack
+spec:
+  pipelineRef:
+    name: rhaiis-llamastack-simple-no-otel-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  params:
+    - name: NAMESPACE
+      value: "llamastack-bench"
+    - name: DISTRIBUTION_NAME
+      value: "llamastack-benchmark"
+    - name: MODEL_NAME
+      value: "qwen3-vl-30b-a3b-instruct"
+    - name: USERS
+      value: "256"
+    - name: SPAWN_RATE
+      value: "5"
+    - name: RUN_TIME_SECONDS
+      value: "3000"
+    - name: MODEL
+      value: "vllm-inference/qwen3-vl-30b-a3b-instruct"
+    - name: PROMPT
+      value: "What is the capital of France?"
+    - name: LOAD_SHAPE
+      value: "poisson"
+    - name: WARMUP_SECONDS
+      value: "300"
+    - name: EXTRA_ENV
+      value: |
+        POISSON_LAMBDA=10
+        POISSON_HOLD_SECONDS=300
+        POISSON_MIN_USERS=1
+        CONNECTION_TTL_SECONDS=60
+    - name: INPUT_TOKENS
+      value: "50"
+    - name: OUTPUT_TOKENS
+      value: "50"
+    - name: HPA_POST_TEST_SECONDS
+      value: "120"
+    # --- HPA config (change these between runs) ---
+    - name: ENABLE_HPA
+      value: "true"
+    - name: HPA_MIN_REPLICAS
+      value: "1"
+    - name: HPA_MAX_REPLICAS
+      value: "4"
+    - name: HPA_MEMORY_TARGET
+      value: "75"
+    - name: HPA_CPU_TARGET
+      value: "0"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "HPA-testing"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      value: "hpa-memory75-poisson-256u-3000s-connttl60"
