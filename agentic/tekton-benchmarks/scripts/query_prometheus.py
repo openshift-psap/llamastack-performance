@@ -244,11 +244,78 @@ def main():
         f'pg_stat_database_blks_hit{{namespace="{ns}", datname="llamastack"}} / (pg_stat_database_blks_hit{{namespace="{ns}", datname="llamastack"}} + pg_stat_database_blks_read{{namespace="{ns}", datname="llamastack"}} > 0)')
     query_and_store("pg/deadlocks_per_sec",
         f'rate(pg_stat_database_deadlocks{{namespace="{ns}", datname="llamastack"}}[1m])')
+    query_and_store("pg/database_size_bytes",
+        f'pg_database_size_bytes{{namespace="{ns}", datname="llamastack"}}')
+    query_and_store("pg/rows_fetched_per_sec",
+        f'rate(pg_stat_database_tup_fetched{{namespace="{ns}", datname="llamastack"}}[1m])')
+    query_and_store("pg/rows_returned_per_sec",
+        f'rate(pg_stat_database_tup_returned{{namespace="{ns}", datname="llamastack"}}[1m])')
+    query_and_store("pg/blk_read_time_ms_per_sec",
+        f'rate(pg_stat_database_blk_read_time{{namespace="{ns}", datname="llamastack"}}[1m])')
+    query_and_store("pg/blk_write_time_ms_per_sec",
+        f'rate(pg_stat_database_blk_write_time{{namespace="{ns}", datname="llamastack"}}[1m])')
+    query_and_store("pg/temp_bytes",
+        f'pg_stat_database_temp_bytes{{namespace="{ns}", datname="llamastack"}}')
+    query_and_store("pg/locks",
+        f'pg_locks_count{{namespace="{ns}", datname="llamastack"}}',
+        is_labeled=True, label_key="mode")
+    query_and_store("pg/seq_scan_per_sec",
+        f'sum(rate(pg_stat_user_tables_seq_scan{{namespace="{ns}"}}[1m]))')
+    query_and_store("pg/idx_scan_per_sec",
+        f'sum(rate(pg_stat_user_tables_idx_scan{{namespace="{ns}"}}[1m]))')
+    query_and_store("pg/inserts_by_table",
+        f'pg_stat_user_tables_n_tup_ins{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/idx_scan_by_table",
+        f'pg_stat_user_tables_idx_scan{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/seq_scan_by_table",
+        f'pg_stat_user_tables_seq_scan{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+
+    # --- Per-Pod Network I/O (namespace-scoped) ---
+    print("Querying per-pod network metrics...")
+    query_and_store("pod_net/rx_bytes_per_sec",
+        f'sum(rate(container_network_receive_bytes_total{{namespace="{ns}"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_net/tx_bytes_per_sec",
+        f'sum(rate(container_network_transmit_bytes_total{{namespace="{ns}"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_net/rx_packets_per_sec",
+        f'sum(rate(container_network_receive_packets_total{{namespace="{ns}"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_net/tx_packets_per_sec",
+        f'sum(rate(container_network_transmit_packets_total{{namespace="{ns}"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+
+    # --- Per-Pod Filesystem I/O (namespace-scoped) ---
+    print("Querying per-pod filesystem I/O...")
+    query_and_store("pod_fs/write_bytes_per_sec",
+        f'sum(rate(container_fs_writes_bytes_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_fs/read_bytes_per_sec",
+        f'sum(rate(container_fs_reads_bytes_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+
+    # --- CPU Throttling (namespace-scoped) ---
+    print("Querying CPU throttling metrics...")
+    query_and_store("pod_cpu/throttled_pct",
+        f'sum(rate(container_cpu_cfs_throttled_periods_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod) / sum(rate(container_cpu_cfs_periods_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod) * 100',
+        is_labeled=True, label_key="pod")
 
     # --- Per-Node CPU/Memory (cluster-wide, same as Grafana "Cluster CPU Usage") ---
     print("Querying per-node CPU/memory...")
     query_and_store("node_cpu/usage_cores",
         'sum(rate(node_cpu_seconds_total{mode!="idle"}[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_cpu/user_cores",
+        'sum(rate(node_cpu_seconds_total{mode="user"}[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_cpu/system_cores",
+        'sum(rate(node_cpu_seconds_total{mode="system"}[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_cpu/iowait_cores",
+        'sum(rate(node_cpu_seconds_total{mode="iowait"}[5m])) by (instance)',
         is_labeled=True, label_key="instance")
     query_and_store("node_memory/usage_gib",
         '(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024',

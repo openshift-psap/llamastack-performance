@@ -44,7 +44,7 @@ spec:
             nodeSelectorTerms:
             - matchExpressions:
               - key: nvidia.com/gpu.present
-                operator: DoesNotExist
+                operator: Exists
       containers:
       - name: postgres
         image: registry.redhat.io/rhel10/postgresql-16:10.1
@@ -94,7 +94,8 @@ spec:
           value: "postgresql://$(POSTGRESQL_USER):$(POSTGRESQL_PASSWORD)@localhost:5432/$(POSTGRESQL_DATABASE)?sslmode=disable"
       volumes:
       - name: postgres-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgres-pvc
 ---
 apiVersion: v1
 kind: Service
