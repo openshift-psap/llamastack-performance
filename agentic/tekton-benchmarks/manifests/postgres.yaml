@@ -36,6 +36,8 @@ spec:
       labels:
         app: postgres
     spec:
+      securityContext:
+        fsGroup: 26
       nodeSelector:
         node-role.kubernetes.io/worker: ""
       affinity:
@@ -44,7 +46,7 @@ spec:
             nodeSelectorTerms:
             - matchExpressions:
               - key: nvidia.com/gpu.present
-                operator: Exists
+                operator: DoesNotExist
       containers:
       - name: postgres
         image: registry.redhat.io/rhel10/postgresql-16:10.1

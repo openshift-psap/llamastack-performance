@@ -43,11 +43,17 @@ spec:
         oc delete deployment postgres -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete service postgres-db -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete service postgres -n $(params.NAMESPACE) --ignore-not-found=true
+        
+        # Wait for pods to fully terminate before deleting PVC (finalizer blocks until pod releases volume)
+        echo "Waiting for postgres pods to terminate..."
+        oc wait --for=delete pod -l app=postgres -n $(params.NAMESPACE) --timeout=60s 2>/dev/null || true
+        
         oc delete pvc postgres-pvc -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete secret postgres-secret -n $(params.NAMESPACE) --ignore-not-found=true
         
-        echo "Waiting for cleanup..."
-        sleep 5
+        # Wait for PVC to be fully removed
+        echo "Waiting for PVC deletion..."
+        oc wait --for=delete pvc/postgres-pvc -n $(params.NAMESPACE) --timeout=60s 2>/dev/null || true
         
         # Deploy fresh PostgreSQL
         echo "Deploying fresh PostgreSQL..."
