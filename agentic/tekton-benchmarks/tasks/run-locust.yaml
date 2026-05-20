@@ -237,11 +237,15 @@ spec:
 
         # Run Locust with CSV output to shared workspace
         cd /tmp/locustfiles
+        LOCUST_EXIT=0
         locust -f locustfile_main.py \
           --host $(params.HOST) \
           --headless \
           --only-summary \
-          --csv "$LOCUST_OUTPUT_DIR/locust-results"
+          --csv "$LOCUST_OUTPUT_DIR/locust-results" || LOCUST_EXIT=$?
+        if [ $LOCUST_EXIT -ne 0 ]; then
+          echo "WARNING: Locust exited with code $LOCUST_EXIT (expected if any requests failed)"
+        fi
 
         # Record test end time
         date +%s > "$LOCUST_OUTPUT_DIR/test_end_epoch"

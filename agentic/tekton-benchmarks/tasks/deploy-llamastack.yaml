@@ -162,7 +162,7 @@ spec:
             echo "=============================================="
 
             # Pin LlamaStack pods to the GPU worker node (co-locate with vLLM)
-            DEPLOY_NAME=$(oc get deployment -n $(params.NAMESPACE) -l app=llama-stack -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+            DEPLOY_NAME=$(params.DISTRIBUTION_NAME)
             if [ -n "$DEPLOY_NAME" ]; then
               GPU_NODE=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
               if [ -n "$GPU_NODE" ]; then
@@ -174,46 +174,33 @@ spec:
               fi
             fi
 
-            # Create HPA if enabled
+            # Enable HPA via operator-native autoscaling (patches the CRD so the operator manages the HPA)
             ENABLE_HPA="$(params.ENABLE_HPA)"
-            if [ "$ENABLE_HPA" = "true" ] && [ -n "$DEPLOY_NAME" ]; then
+            if [ "$ENABLE_HPA" = "true" ]; then
               HPA_MIN="$(params.HPA_MIN_REPLICAS)"
               HPA_MAX="$(params.HPA_MAX_REPLICAS)"
               HPA_MEM="$(params.HPA_MEMORY_TARGET)"
               HPA_CPU="$(params.HPA_CPU_TARGET)"
               echo ""
+              echo "Enabling autoscaling via LlamaStackDistribution CR (min: $HPA_MIN, max: $HPA_MAX)"
 
-              # Build metrics array based on which targets are enabled
-              METRICS=""
+              PATCH="{\"spec\":{\"server\":{\"autoscaling\":{\"minReplicas\":$HPA_MIN,\"maxReplicas\":$HPA_MAX"
               if [ "$HPA_MEM" -gt 0 ] 2>/dev/null; then
-                METRICS="${METRICS}{\"type\":\"Resource\",\"resource\":{\"name\":\"memory\",\"target\":{\"type\":\"Utilization\",\"averageUtilization\":$HPA_MEM}}},"
+                PATCH="${PATCH},\"targetMemoryUtilizationPercentage\":$HPA_MEM"
                 echo "  Memory target: ${HPA_MEM}%"
               fi
               if [ "$HPA_CPU" -gt 0 ] 2>/dev/null; then
-                METRICS="${METRICS}{\"type\":\"Resource\",\"resource\":{\"name\":\"cpu\",\"target\":{\"type\":\"Utilization\",\"averageUtilization\":$HPA_CPU}}},"
+                PATCH="${PATCH},\"targetCPUUtilizationPercentage\":$HPA_CPU"
                 echo "  CPU target: ${HPA_CPU}%"
               fi
-              METRICS="${METRICS%,}"
+              PATCH="${PATCH}}}}}"
 
-              if [ -z "$METRICS" ]; then
-                echo "WARNING: HPA enabled but no metric targets set (HPA_MEMORY_TARGET and HPA_CPU_TARGET are both 0)"
-              else
-                echo "Creating HPA for $DEPLOY_NAME (min: $HPA_MIN, max: $HPA_MAX)"
+              oc patch llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --type merge -p "$PATCH"
 
-                HPA_MANIFEST=$(curl -sL $(params.HPA_MANIFEST_PATH))
-                HPA_MANIFEST=$(echo "$HPA_MANIFEST" | \
-                  sed "s|name: HPA_NAME|name: $(params.DISTRIBUTION_NAME)-hpa|g" | \
-                  sed "s|name: DEPLOY_NAME|name: $DEPLOY_NAME|g" | \
-                  sed "s|minReplicas: HPA_MIN|minReplicas: $HPA_MIN|g" | \
-                  sed "s|maxReplicas: HPA_MAX|maxReplicas: $HPA_MAX|g" | \
-                  sed "s|metrics: \[HPA_METRICS\]|metrics: [$METRICS]|g")
-                echo "$HPA_MANIFEST" | oc apply -f - -n $(params.NAMESPACE)
-
-                echo "Waiting for HPA to be recognized..."
-                sleep 10
-                echo "HPA status:"
-                oc get hpa -n $(params.NAMESPACE)
-              fi
+              echo "Waiting for operator to reconcile autoscaling..."
+              sleep 15
+              echo "HPA status:"
+              oc get hpa -n $(params.NAMESPACE) 2>/dev/null || echo "  (no HPA found yet — operator may still be reconciling)"
             fi
 
             exit 0

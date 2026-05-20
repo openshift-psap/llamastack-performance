@@ -318,6 +318,11 @@ def main():
     query_and_store("pg/seq_scan_by_table",
         f'pg_stat_user_tables_seq_scan{{namespace="{ns}"}}',
         is_labeled=True, label_key="relname")
+    query_and_store("pg/connections_by_app",
+        f'pg_stat_activity_count{{namespace="{ns}"}}',
+        is_labeled=True, label_key="application_name")
+    query_and_store("pg/max_connections",
+        f'pg_settings_max_connections{{namespace="{ns}"}}')
 
     # --- Per-Pod Network I/O (namespace-scoped) ---
     print("Querying per-pod network metrics...")
@@ -367,6 +372,39 @@ def main():
         '(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024',
         is_labeled=True, label_key="instance")
 
+    # --- Per-Node Network I/O (cluster-wide) ---
+    print("Querying per-node network metrics...")
+    query_and_store("node_net/rx_bytes_per_sec",
+        'rate(node_network_receive_bytes_total{device!~"lo|veth.*|br.*|ovs.*|tun.*"}[5m])',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_net/tx_bytes_per_sec",
+        'rate(node_network_transmit_bytes_total{device!~"lo|veth.*|br.*|ovs.*|tun.*"}[5m])',
+        is_labeled=True, label_key="instance")
+
+    # --- Per-Node Disk I/O (cluster-wide) ---
+    print("Querying per-node disk metrics...")
+    query_and_store("node_disk/read_bytes_per_sec",
+        'sum(rate(node_disk_read_bytes_total[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_disk/write_bytes_per_sec",
+        'sum(rate(node_disk_written_bytes_total[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+    query_and_store("node_disk/io_time_seconds_per_sec",
+        'sum(rate(node_disk_io_time_seconds_total[5m])) by (instance)',
+        is_labeled=True, label_key="instance")
+
+    # --- PVC Storage (cluster-wide) ---
+    print("Querying PVC storage metrics...")
+    query_and_store("node_storage/pvc_used_gib",
+        f'kubelet_volume_stats_used_bytes{{namespace="{ns}"}} / 1024 / 1024 / 1024',
+        is_labeled=True, label_key="persistentvolumeclaim")
+    query_and_store("node_storage/pvc_capacity_gib",
+        f'kubelet_volume_stats_capacity_bytes{{namespace="{ns}"}} / 1024 / 1024 / 1024',
+        is_labeled=True, label_key="persistentvolumeclaim")
+    query_and_store("node_storage/pvc_inodes_used",
+        f'kubelet_volume_stats_inodes_used{{namespace="{ns}"}}',
+        is_labeled=True, label_key="persistentvolumeclaim")
+
     # --- Endpoint Readiness (when pods joined the Service) ---
     print("Querying endpoint readiness...")
     query_and_store("endpoint/ready",
@@ -388,7 +426,7 @@ def main():
         f'kube_pod_container_status_restarts_total{{namespace="{ns}", pod=~".*llamastack.*"}}',
         is_labeled=True, label_key="pod")
     query_and_store("pod_lifecycle/terminating",
-        f'kube_pod_status_reason{{namespace="{ns}", pod=~".*llamastack.*", reason="Evicted"}}',
+        f'kube_pod_deletion_timestamp{{namespace="{ns}", pod=~".*llamastack.*"}}',
         is_labeled=True, label_key="pod")
     query_and_store("pod_lifecycle/container_terminated",
         f'kube_pod_container_status_terminated_reason{{namespace="{ns}", pod=~".*llamastack.*"}}',
@@ -401,6 +439,12 @@ def main():
     print("Querying per-pod CPU/memory...")
     query_and_store("pod_cpu/cpu_cores",
         f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod)',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_cpu/cpu_cores_llamastack",
+        f'rate(container_cpu_usage_seconds_total{{namespace="{ns}", container="llama-stack"}}[5m])',
+        is_labeled=True, label_key="pod")
+    query_and_store("pod_cpu/context_switches_voluntary",
+        f'rate(container_context_switches_total{{namespace="{ns}", container!="", container!="POD"}}[5m])',
         is_labeled=True, label_key="pod")
     query_and_store("pod_memory/memory_gib",
         f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',

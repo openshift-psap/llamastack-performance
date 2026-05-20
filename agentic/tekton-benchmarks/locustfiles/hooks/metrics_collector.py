@@ -141,6 +141,11 @@ def _on_test_stop(environment, **kwargs):
         summary["response_time_p50_ms"] = round(sorted_rt[len(sorted_rt) // 2], 2)
         summary["response_time_p95_ms"] = round(sorted_rt[int(len(sorted_rt) * 0.95)], 2)
         summary["response_time_p99_ms"] = round(sorted_rt[int(len(sorted_rt) * 0.99)], 2)
+        mean = sum(all_response_times) / len(all_response_times)
+        variance = sum((x - mean) ** 2 for x in all_response_times) / len(all_response_times)
+        stddev = variance ** 0.5
+        summary["response_time_stddev_ms"] = round(stddev, 2)
+        summary["response_time_cv"] = round(stddev / mean, 4) if mean > 0 else 0
 
     summary_path = os.path.join(output_dir, "summary_metrics.json")
     with open(summary_path, "w") as f:

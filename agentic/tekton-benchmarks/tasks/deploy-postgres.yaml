@@ -59,9 +59,13 @@ spec:
         echo "Deploying fresh PostgreSQL..."
         oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
         
-        # Wait for PostgreSQL to be ready
+        # Wait for PVC to bind (IBM Cloud block storage can take 2-4 minutes to provision)
+        echo "Waiting for PVC to bind..."
+        oc wait --for=jsonpath='{.status.phase}'=Bound pvc/postgres-pvc -n $(params.NAMESPACE) --timeout=300s
+        
+        # Wait for PostgreSQL deployment to be available
         echo "Waiting for PostgreSQL to be ready..."
-        oc wait --for=condition=available deployment/postgres -n $(params.NAMESPACE) --timeout=120s
+        oc wait --for=condition=available deployment/postgres -n $(params.NAMESPACE) --timeout=180s
         
         # Create ServiceMonitor so OpenShift Prometheus scrapes postgres-exporter metrics
         cat <<SM_EOF | oc apply -n $(params.NAMESPACE) -f -
