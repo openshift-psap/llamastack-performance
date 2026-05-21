@@ -97,9 +97,24 @@ spec:
         # Delete existing LlamaStack if present
         echo "Cleaning up existing LlamaStack..."
         oc delete llamastackdistribution $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
-        
-        echo "Waiting for cleanup..."
-        sleep 10
+
+        # Delete any leftover HPA (operator-managed or manual)
+        oc delete hpa -l app.kubernetes.io/part-of=llama-stack -n $(params.NAMESPACE) --ignore-not-found=true 2>/dev/null || true
+        oc delete hpa $(params.DISTRIBUTION_NAME)-hpa -n $(params.NAMESPACE) --ignore-not-found=true 2>/dev/null || true
+
+        # Explicitly delete the deployment (operator may not cascade-delete it properly)
+        oc delete deployment $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+
+        # Wait for the deployment to fully terminate
+        echo "Waiting for previous deployment to terminate..."
+        for i in {1..60}; do
+          if ! oc get deployment $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) 2>/dev/null | grep -q $(params.DISTRIBUTION_NAME); then
+            echo "  Previous deployment gone (after ${i}x5s)"
+            break
+          fi
+          echo "  Still terminating... (${i}/60)"
+          sleep 5
+        done
         
         MODEL_PREDICTOR="$(params.MODEL_NAME)-predictor"
         VLLM_NS="$(params.VLLM_NAMESPACE)"

@@ -66,6 +66,10 @@ spec:
         echo "Deleting LlamaStack HPAs..."
         oc delete hpa -l app.kubernetes.io/part-of=llama-stack -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete hpa $(params.DISTRIBUTION_NAME)-hpa -n $(params.NAMESPACE) --ignore-not-found=true
+
+        # Explicitly delete LlamaStack deployment (operator cascade may not work)
+        echo "Deleting LlamaStack deployment..."
+        oc delete deployment $(params.DISTRIBUTION_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
         
         # Delete PostgreSQL
         echo "Deleting PostgreSQL..."
