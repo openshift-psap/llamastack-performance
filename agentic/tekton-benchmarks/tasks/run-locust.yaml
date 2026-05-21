@@ -361,7 +361,7 @@ spec:
 
           if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
             touch /shared/hpa_done
-            break
+            sleep infinity
           fi
 
           sleep 1
@@ -459,7 +459,7 @@ spec:
 
           if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
             touch /shared/prom_done
-            break
+            sleep infinity
           fi
 
           sleep 5
