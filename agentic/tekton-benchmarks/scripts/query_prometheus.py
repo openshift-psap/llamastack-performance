@@ -166,8 +166,11 @@ def main():
     query_range = end - query_start
     step = compute_step(query_range)
     timeout = compute_timeout(query_range)
+    is_long_test = duration > 43200  # >12h
     print(f"Test window: {duration:.0f}s ({duration/3600:.1f}h), warmup: {warmup}s, query range: {query_range:.0f}s")
     print(f"Auto-tuned: step={step}, timeout={timeout}s")
+    if is_long_test:
+        print(f"Long test detected: will query rate metrics with both [1m] and [5m] windows")
 
     try:
         token = Path(args.token_path).read_text().strip()
@@ -264,6 +267,18 @@ def main():
     query_and_store("vllm/inter_token_latency_p50_s",
         f'histogram_quantile(0.50, sum(rate(vllm:inter_token_latency_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
 
+    # For long tests, re-query vLLM rate metrics with [5m] window
+    if is_long_test:
+        print("Querying vLLM rate metrics with [5m] window (full coverage)...")
+        query_and_store("vllm/prompt_throughput_tps_5m",
+            f'sum(rate(vllm:prompt_tokens_total{{namespace="{ns}"}}[5m]))')
+        query_and_store("vllm/generation_throughput_tps_5m",
+            f'sum(rate(vllm:generation_tokens_total{{namespace="{ns}"}}[5m]))')
+        query_and_store("vllm/ttft_p50_s_5m",
+            f'histogram_quantile(0.50, sum(rate(vllm:time_to_first_token_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))')
+        query_and_store("vllm/e2e_latency_p50_s_5m",
+            f'histogram_quantile(0.50, sum(rate(vllm:e2e_request_latency_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))')
+
     # --- GPU/DCGM Metrics (per-GPU series) ---
     print("Querying GPU metrics...")
     query_and_store("gpu/utilization_pct", "DCGM_FI_DEV_GPU_UTIL",
@@ -324,7 +339,30 @@ def main():
     query_and_store("pg/max_connections",
         f'pg_settings_max_connections{{namespace="{ns}"}}')
 
-    # --- Per-Pod Network I/O (namespace-scoped) ---
+    # For long tests (>12h), re-query rate metrics with [5m] window for full coverage
+    # (user-workload Prometheus retains raw data for ~24h; [5m] works with compacted data)
+    if is_long_test:
+        print("Querying Postgres rate metrics with [5m] window (full coverage)...")
+        query_and_store("pg/commits_per_sec_5m",
+            f'rate(pg_stat_database_xact_commit{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/rollbacks_per_sec_5m",
+            f'rate(pg_stat_database_xact_rollback{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/inserts_per_sec_5m",
+            f'rate(pg_stat_database_tup_inserted{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/deadlocks_per_sec_5m",
+            f'rate(pg_stat_database_deadlocks{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/rows_fetched_per_sec_5m",
+            f'rate(pg_stat_database_tup_fetched{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/rows_returned_per_sec_5m",
+            f'rate(pg_stat_database_tup_returned{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/blk_read_time_ms_per_sec_5m",
+            f'rate(pg_stat_database_blk_read_time{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/blk_write_time_ms_per_sec_5m",
+            f'rate(pg_stat_database_blk_write_time{{namespace="{ns}", datname="llamastack"}}[5m])')
+        query_and_store("pg/seq_scan_per_sec_5m",
+            f'sum(rate(pg_stat_user_tables_seq_scan{{namespace="{ns}"}}[5m]))')
+        query_and_store("pg/idx_scan_per_sec_5m",
+            f'sum(rate(pg_stat_user_tables_idx_scan{{namespace="{ns}"}}[5m]))')
     print("Querying per-pod network metrics...")
     query_and_store("pod_net/rx_bytes_per_sec",
         f'sum(rate(container_network_receive_bytes_total{{namespace="{ns}"}}[5m])) by (pod)',
