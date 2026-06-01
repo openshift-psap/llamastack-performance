@@ -58,6 +58,13 @@ spec:
         # Deploy fresh PostgreSQL
         echo "Deploying fresh PostgreSQL..."
         oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
+
+        # Create custom queries ConfigMap for postgres-exporter (table sizes)
+        QUERIES_URL=$(echo "$(params.MANIFEST_PATH)" | sed 's|/postgres.yaml|/postgres-exporter-queries.yaml|')
+        echo "Creating postgres-exporter custom queries ConfigMap..."
+        oc create configmap postgres-exporter-queries -n $(params.NAMESPACE) \
+          --from-file=queries.yaml=<(curl -sL "$QUERIES_URL") \
+          --dry-run=client -o yaml | oc apply -f - -n $(params.NAMESPACE)
         
         # Wait for PVC to bind (IBM Cloud block storage can take 2-4 minutes to provision)
         echo "Waiting for PVC to bind..."

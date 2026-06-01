@@ -1,0 +1,35 @@
+# Custom queries for postgres-exporter to expose table/index sizes
+# These are not available from the default collectors
+pg_table_sizes:
+  query: |
+    SELECT
+      schemaname,
+      relname,
+      pg_total_relation_size(relid) as total_bytes,
+      pg_relation_size(relid) as table_bytes,
+      pg_indexes_size(relid) as index_bytes,
+      n_live_tup as live_rows,
+      n_dead_tup as dead_rows
+    FROM pg_stat_user_tables
+  metrics:
+    - schemaname:
+        usage: "LABEL"
+        description: "Schema name"
+    - relname:
+        usage: "LABEL"
+        description: "Table name"
+    - total_bytes:
+        usage: "GAUGE"
+        description: "Total size of table including indexes and TOAST (bytes)"
+    - table_bytes:
+        usage: "GAUGE"
+        description: "Size of the table data only (bytes)"
+    - index_bytes:
+        usage: "GAUGE"
+        description: "Size of all indexes on the table (bytes)"
+    - live_rows:
+        usage: "GAUGE"
+        description: "Estimated number of live rows"
+    - dead_rows:
+        usage: "GAUGE"
+        description: "Estimated number of dead rows"

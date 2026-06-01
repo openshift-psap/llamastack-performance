@@ -75,6 +75,7 @@ spec:
         image: quay.io/prometheuscommunity/postgres-exporter:v0.19.1
         args:
         - "--collector.stat_checkpointer"
+        - "--extend.query-path=/etc/postgres-exporter/queries.yaml"
         ports:
         - containerPort: 9187
           name: metrics
@@ -96,10 +97,16 @@ spec:
               key: POSTGRES_PASSWORD
         - name: DATA_SOURCE_NAME
           value: "postgresql://$(POSTGRESQL_USER):$(POSTGRESQL_PASSWORD)@localhost:5432/$(POSTGRESQL_DATABASE)?sslmode=disable"
+        volumeMounts:
+        - name: exporter-queries
+          mountPath: /etc/postgres-exporter
       volumes:
       - name: postgres-storage
         persistentVolumeClaim:
           claimName: postgres-pvc
+      - name: exporter-queries
+        configMap:
+          name: postgres-exporter-queries
 ---
 apiVersion: v1
 kind: Service

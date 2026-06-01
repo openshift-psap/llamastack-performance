@@ -339,6 +339,49 @@ def main():
     query_and_store("pg/max_connections",
         f'pg_settings_max_connections{{namespace="{ns}"}}')
 
+    # --- PostgreSQL Table Storage & Vacuum (for AC: storage growth per table) ---
+    query_and_store("pg/live_rows_by_table",
+        f'pg_stat_user_tables_n_live_tup{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/dead_rows_by_table",
+        f'pg_stat_user_tables_n_dead_tup{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/autovacuum_count_by_table",
+        f'pg_stat_user_tables_autovacuum_count{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/table_size_bytes",
+        f'pg_stat_user_tables_size_bytes{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/table_total_bytes",
+        f'pg_table_sizes_total_bytes{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/table_data_bytes",
+        f'pg_table_sizes_table_bytes{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+    query_and_store("pg/index_bytes",
+        f'pg_table_sizes_index_bytes{{namespace="{ns}"}}',
+        is_labeled=True, label_key="relname")
+
+    # --- PostgreSQL Checkpointer (PG 17+, requires stat_checkpointer collector) ---
+    query_and_store("pg/checkpoints_timed",
+        f'pg_stat_checkpointer_num_timed_total{{namespace="{ns}"}}')
+    query_and_store("pg/checkpoints_requested",
+        f'pg_stat_checkpointer_num_requested_total{{namespace="{ns}"}}')
+    query_and_store("pg/checkpoint_write_time_ms",
+        f'pg_stat_checkpointer_write_time_total{{namespace="{ns}"}}')
+    query_and_store("pg/checkpoint_sync_time_ms",
+        f'pg_stat_checkpointer_sync_time_total{{namespace="{ns}"}}')
+    query_and_store("pg/checkpoint_buffers_written",
+        f'pg_stat_checkpointer_buffers_written_total{{namespace="{ns}"}}')
+
+    # --- Background Writer (buffer management) ---
+    query_and_store("pg/bgwriter_buffers_clean",
+        f'pg_stat_bgwriter_buffers_clean_total{{namespace="{ns}"}}')
+    query_and_store("pg/bgwriter_buffers_alloc",
+        f'pg_stat_bgwriter_buffers_alloc_total{{namespace="{ns}"}}')
+    query_and_store("pg/bgwriter_maxwritten_clean",
+        f'pg_stat_bgwriter_maxwritten_clean_total{{namespace="{ns}"}}')
+
     # For long tests (>12h), re-query rate metrics with [5m] window for full coverage
     # (user-workload Prometheus retains raw data for ~24h; [5m] works with compacted data)
     if is_long_test:
@@ -363,6 +406,12 @@ def main():
             f'sum(rate(pg_stat_user_tables_seq_scan{{namespace="{ns}"}}[5m]))')
         query_and_store("pg/idx_scan_per_sec_5m",
             f'sum(rate(pg_stat_user_tables_idx_scan{{namespace="{ns}"}}[5m]))')
+        query_and_store("pg/checkpoints_timed_rate_5m",
+            f'rate(pg_stat_checkpointer_num_timed_total{{namespace="{ns}"}}[5m])')
+        query_and_store("pg/checkpoint_write_time_rate_5m",
+            f'rate(pg_stat_checkpointer_write_time_total{{namespace="{ns}"}}[5m])')
+
+    # --- Per-Pod Network I/O (namespace-scoped) ---
     print("Querying per-pod network metrics...")
     query_and_store("pod_net/rx_bytes_per_sec",
         f'sum(rate(container_network_receive_bytes_total{{namespace="{ns}"}}[5m])) by (pod)',
