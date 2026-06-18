@@ -181,7 +181,7 @@ spec:
         if [ -n "$LS_PODS" ]; then
           POD_IDX=0
           for LS_POD in $LS_PODS; do
-            oc logs "$LS_POD" -n $NS --tail=5000 > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
+            oc logs "$LS_POD" -n $NS --tail=200000 > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
             echo "Captured LlamaStack logs from $LS_POD ($(wc -l < "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt") lines)"
             POD_IDX=$((POD_IDX + 1))
           done

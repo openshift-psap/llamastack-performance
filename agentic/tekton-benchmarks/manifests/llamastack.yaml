@@ -45,6 +45,8 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: POSTGRES_PASSWORD
+        - name: POSTGRES_POOL_SIZE
+          value: "50"
       name: llama-stack
       port: 8321
     distribution:

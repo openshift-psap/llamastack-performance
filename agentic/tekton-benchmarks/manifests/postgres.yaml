@@ -68,6 +68,8 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: POSTGRES_PASSWORD
+        - name: POSTGRESQL_MAX_CONNECTIONS
+          value: "300"
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/pgsql/data
