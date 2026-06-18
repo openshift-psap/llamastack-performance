@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument("--results-dir", required=True)
     parser.add_argument("--prometheus-url", default="https://thanos-querier.openshift-monitoring.svc:9091")
     parser.add_argument("--namespace", default="llamastack-bench")
+    parser.add_argument("--tekton-namespace", default="tekton-llamastack",
+                        help="Namespace where Tekton task pods run (for Locust pod metrics)")
     parser.add_argument("--token-path", default="/var/run/secrets/kubernetes.io/serviceaccount/token")
     return parser.parse_args()
 
@@ -536,6 +538,26 @@ def main():
     query_and_store("pod_memory/memory_gib",
         f'sum(container_memory_working_set_bytes{{namespace="{ns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',
         is_labeled=True, label_key="pod")
+
+    # --- Tekton namespace (Locust pod + sidecars) ---
+    tns = args.tekton_namespace
+    if tns:
+        print(f"Querying Tekton namespace ({tns}) pod metrics...")
+        query_and_store("tekton_cpu/cpu_cores",
+            f'sum(rate(container_cpu_usage_seconds_total{{namespace="{tns}", container!="", container!="POD"}}[5m])) by (pod)',
+            is_labeled=True, label_key="pod")
+        query_and_store("tekton_memory/memory_gib",
+            f'sum(container_memory_working_set_bytes{{namespace="{tns}", container!="", container!="POD"}}) by (pod) / 1024 / 1024 / 1024',
+            is_labeled=True, label_key="pod")
+        query_and_store("tekton_cpu/throttled_pct",
+            f'sum(rate(container_cpu_cfs_throttled_periods_total{{namespace="{tns}", container!="", container!="POD"}}[5m])) by (pod) / sum(rate(container_cpu_cfs_periods_total{{namespace="{tns}", container!="", container!="POD"}}[5m])) by (pod) * 100',
+            is_labeled=True, label_key="pod")
+        query_and_store("tekton_net/rx_bytes_per_sec",
+            f'sum(rate(container_network_receive_bytes_total{{namespace="{tns}"}}[5m])) by (pod)',
+            is_labeled=True, label_key="pod")
+        query_and_store("tekton_net/tx_bytes_per_sec",
+            f'sum(rate(container_network_transmit_bytes_total{{namespace="{tns}"}}[5m])) by (pod)',
+            is_labeled=True, label_key="pod")
 
     # Filter empty aggregates
     output["aggregate"] = {k: v for k, v in agg.items() if v and v > 0}
