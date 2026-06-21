@@ -19,7 +19,7 @@ spec:
     - name: MODEL_NAME
       description: Name of the vLLM InferenceService to delete
       type: string
-      default: "llama-32-3b-instruct"
+      default: "qwen3-vl-30b-a3b-instruct"
     - name: MCP_SERVER_NAME
       description: Name of the MCP server deployment to delete
       type: string
@@ -98,6 +98,14 @@ spec:
           echo "Deleting vLLM InferenceService..."
           oc delete inferenceservice $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
           oc delete servingruntime $(params.MODEL_NAME) -n $(params.NAMESPACE) --ignore-not-found=true
+          # Also clean vLLM from other known benchmark namespaces
+          for NS in vllm-direct-bench; do
+            if oc get namespace "$NS" &>/dev/null; then
+              echo "Cleaning vLLM from $NS..."
+              oc delete inferenceservice $(params.MODEL_NAME) -n "$NS" --ignore-not-found=true
+              oc delete servingruntime $(params.MODEL_NAME) -n "$NS" --ignore-not-found=true
+            fi
+          done
         else
           echo "Skipping vLLM cleanup (CLEANUP_VLLM=false)"
         fi
