@@ -162,16 +162,16 @@ spec:
         if [ -n "$ISVC" ]; then
           VLLM_POD=$(oc get pod -n $NS -l serving.kserve.io/inferenceservice=$ISVC -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$VLLM_POD" ]; then
-            oc logs "$VLLM_POD" -n $NS -c kserve-container --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>/dev/null || \
-              oc logs "$VLLM_POD" -n $NS --tail=10000 > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>&1 || true
+            oc logs "$VLLM_POD" -n $NS -c kserve-container > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>/dev/null || \
+              oc logs "$VLLM_POD" -n $NS > "$RESULTS_DIR/rhaiis_vllm_logs.txt" 2>&1 || true
             echo "Captured vLLM logs from $VLLM_POD ($(wc -l < "$RESULTS_DIR/rhaiis_vllm_logs.txt") lines)"
             # Only capture sidecar logs if containers exist
             CONTAINERS=$(oc get pod "$VLLM_POD" -n $NS -o jsonpath='{.spec.containers[*].name}' 2>/dev/null || echo "")
             if echo "$CONTAINERS" | grep -q "queue-proxy"; then
-              oc logs "$VLLM_POD" -n $NS -c queue-proxy --tail=5000 > "$RESULTS_DIR/rhaiis_queue_proxy_logs.txt" 2>&1 || true
+              oc logs "$VLLM_POD" -n $NS -c queue-proxy > "$RESULTS_DIR/rhaiis_queue_proxy_logs.txt" 2>&1 || true
             fi
             if echo "$CONTAINERS" | grep -q "storage-initializer"; then
-              oc logs "$VLLM_POD" -n $NS -c storage-initializer --tail=5000 > "$RESULTS_DIR/rhaiis_storage_init_logs.txt" 2>&1 || true
+              oc logs "$VLLM_POD" -n $NS -c storage-initializer > "$RESULTS_DIR/rhaiis_storage_init_logs.txt" 2>&1 || true
             fi
           fi
         fi
@@ -181,7 +181,7 @@ spec:
         if [ -n "$LS_PODS" ]; then
           POD_IDX=0
           for LS_POD in $LS_PODS; do
-            oc logs "$LS_POD" -n $NS --tail=200000 > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
+            oc logs "$LS_POD" -n $NS > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
             echo "Captured LlamaStack logs from $LS_POD ($(wc -l < "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt") lines)"
             POD_IDX=$((POD_IDX + 1))
           done
@@ -190,7 +190,7 @@ spec:
         # Collect Postgres logs if present
         PG_POD=$(oc get pod -n $NS -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         if [ -n "$PG_POD" ]; then
-          oc logs "$PG_POD" -n $NS -c postgres --tail=5000 > "$RESULTS_DIR/postgres_logs.txt" 2>&1 || true
+          oc logs "$PG_POD" -n $NS -c postgres > "$RESULTS_DIR/postgres_logs.txt" 2>&1 || true
           echo "Captured Postgres logs from $PG_POD ($(wc -l < "$RESULTS_DIR/postgres_logs.txt") lines)"
         fi
 
