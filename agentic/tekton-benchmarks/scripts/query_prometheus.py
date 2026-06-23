@@ -287,9 +287,34 @@ def main():
         is_labeled=True, label_key="gpu")
     query_and_store("gpu/memory_used_mib", "DCGM_FI_DEV_FB_USED",
         is_labeled=True, label_key="gpu")
+    query_and_store("gpu/memory_free_mib", "DCGM_FI_DEV_FB_FREE",
+        is_labeled=True, label_key="gpu")
     query_and_store("gpu/temperature_c", "DCGM_FI_DEV_GPU_TEMP",
         is_labeled=True, label_key="gpu")
     query_and_store("gpu/power_w", "DCGM_FI_DEV_POWER_USAGE",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/sm_clock_mhz", "DCGM_FI_DEV_SM_CLOCK",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/mem_clock_mhz", "DCGM_FI_DEV_MEM_CLOCK",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu/mem_copy_util_pct", "DCGM_FI_DEV_MEM_COPY_UTIL",
+        is_labeled=True, label_key="gpu")
+
+    # --- GPU Profiling Metrics (per-GPU, more accurate than device-level) ---
+    print("Querying GPU profiling metrics...")
+    query_and_store("gpu_prof/dram_active", "DCGM_FI_PROF_DRAM_ACTIVE",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/gr_engine_active", "DCGM_FI_PROF_GR_ENGINE_ACTIVE",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/tensor_active", "DCGM_FI_PROF_PIPE_TENSOR_ACTIVE",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/pcie_tx_bytes", "DCGM_FI_PROF_PCIE_TX_BYTES",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/pcie_rx_bytes", "DCGM_FI_PROF_PCIE_RX_BYTES",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/sm_active", "DCGM_FI_PROF_SM_ACTIVE",
+        is_labeled=True, label_key="gpu")
+    query_and_store("gpu_prof/sm_occupancy", "DCGM_FI_PROF_SM_OCCUPANCY",
         is_labeled=True, label_key="gpu")
 
     # --- Postgres Exporter Metrics ---
