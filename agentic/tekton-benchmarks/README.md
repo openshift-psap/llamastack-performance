@@ -100,11 +100,13 @@ The Pushgateway receives benchmark results at the end of each test run, so dashb
 
 ## MLflow
 
-When `ENABLE_MLFLOW=true`, all metrics are batch-logged to SageMaker MLflow. This requires the `mlflow-aws-credentials` secret in the `tekton-llamastack` namespace with:
+When `ENABLE_MLFLOW=true`, all metrics are batch-logged to MLflow. This requires the `mlflow-credentials` secret in the `tekton-llamastack` namespace with:
 
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `MLFLOW_TRACKING_ARN`
+- `MLFLOW_TRACKING_URI`
+- `MLFLOW_TRACKING_USERNAME`
+- `MLFLOW_TRACKING_PASSWORD`
+- `MLFLOW_WORKSPACE`
+- `MLFLOW_TRACKING_INSECURE_TLS` (optional, set to `true` for self-signed certs)
 
 Each run includes summary metrics, time-series data (viewable as step charts), cluster version info, and all raw result files as artifacts.
 

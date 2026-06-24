@@ -234,14 +234,16 @@ oc adm policy add-scc-to-user anyuid system:serviceaccount:llamastack-bench:defa
 
 ### MLflow credentials (required only if `ENABLE_MLFLOW=true`)
 
-If you want to log benchmark results to AWS SageMaker MLflow, create the credentials secret:
+If you want to log benchmark results to MLflow, create the credentials secret:
 
 ```bash
-oc create secret generic mlflow-aws-credentials \
+oc create secret generic mlflow-credentials \
   -n tekton-llamastack \
-  --from-literal=AWS_ACCESS_KEY_ID=<your-access-key> \
-  --from-literal=AWS_SECRET_ACCESS_KEY=<your-secret-key> \
-  --from-literal=MLFLOW_TRACKING_ARN=<your-mlflow-tracking-arn>
+  --from-literal=MLFLOW_TRACKING_URI=https://mlflow.apps.psap-automation.ibm.rhperfscale.org \
+  --from-literal=MLFLOW_TRACKING_USERNAME=<your-username> \
+  --from-literal=MLFLOW_TRACKING_PASSWORD=<your-password> \
+  --from-literal=MLFLOW_WORKSPACE=psap-rhoai \
+  --from-literal=MLFLOW_TRACKING_INSECURE_TLS=true
 ```
 
 If you don't need MLflow, skip this step and set `ENABLE_MLFLOW: "false"` in your PipelineRun parameters.

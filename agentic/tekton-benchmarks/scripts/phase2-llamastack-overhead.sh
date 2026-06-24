@@ -29,7 +29,7 @@
 #   - Logged in to the OpenShift cluster (oc whoami)
 #   - Tekton tasks/pipelines applied (oc apply -f tasks/ -f pipelines/)
 #   - RBAC applied (oc apply -f rbac/)
-#   - mlflow-aws-credentials secret exists in tekton-llamastack namespace
+#   - mlflow-credentials secret exists in tekton-llamastack namespace
 #   - Smoke test passed: ./scripts/phase2-smoke-test.sh
 
 set -euo pipefail

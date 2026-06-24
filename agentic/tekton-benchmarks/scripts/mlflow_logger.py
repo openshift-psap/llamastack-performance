@@ -1,5 +1,5 @@
 """
-MLflow Logger — reads all result files and batch-logs to SageMaker MLflow.
+MLflow Logger — reads all result files and batch-logs to MLflow.
 
 Reads summary metrics, time-series metrics, HPA metrics, Prometheus metrics
 (Postgres + vLLM), and trace metrics from the shared workspace, then logs
@@ -20,8 +20,9 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("boto3").setLevel(logging.WARNING)
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logging.getLogger("mlflow").setLevel(logging.ERROR)
 
 import mlflow
 from mlflow import MlflowClient
@@ -195,13 +196,19 @@ def main():
     cluster_versions = read_cluster_versions(results_dir)
     trace_agg, trace_per_req = read_trace_metrics(results_dir)
 
-    tracking_arn = os.environ.get("MLFLOW_TRACKING_ARN", "")
-    if not tracking_arn:
-        print("ERROR: MLFLOW_TRACKING_ARN not set")
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
+    if not tracking_uri:
+        print("ERROR: MLFLOW_TRACKING_URI not set")
         return
 
-    print(f"Connecting to MLflow: {tracking_arn[:60]}...")
-    mlflow.set_tracking_uri(tracking_arn)
+    print(f"Connecting to MLflow: {tracking_uri[:60]}...")
+    mlflow.set_tracking_uri(tracking_uri)
+
+    workspace = os.environ.get("MLFLOW_WORKSPACE", "")
+    if workspace:
+        mlflow.set_workspace(workspace)
+        print(f"Workspace: {workspace}")
+
     mlflow.set_experiment(args.experiment)
     client = MlflowClient()
 
