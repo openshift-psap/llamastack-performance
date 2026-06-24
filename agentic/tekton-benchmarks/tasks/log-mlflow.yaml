@@ -212,31 +212,36 @@ spec:
     - name: log-to-mlflow
       image: registry.access.redhat.com/ubi9/python-311:latest
       env:
-        - name: AWS_ACCESS_KEY_ID
+        - name: MLFLOW_TRACKING_URI
           valueFrom:
             secretKeyRef:
-              name: mlflow-aws-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
+              name: mlflow-credentials
+              key: MLFLOW_TRACKING_URI
+        - name: MLFLOW_TRACKING_USERNAME
           valueFrom:
             secretKeyRef:
-              name: mlflow-aws-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_DEFAULT_REGION
+              name: mlflow-credentials
+              key: MLFLOW_TRACKING_USERNAME
+        - name: MLFLOW_TRACKING_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: mlflow-aws-credentials
-              key: AWS_DEFAULT_REGION
+              name: mlflow-credentials
+              key: MLFLOW_TRACKING_PASSWORD
+        - name: MLFLOW_WORKSPACE
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-credentials
+              key: MLFLOW_WORKSPACE
+        - name: MLFLOW_TRACKING_INSECURE_TLS
+          valueFrom:
+            secretKeyRef:
+              name: mlflow-credentials
+              key: MLFLOW_TRACKING_INSECURE_TLS
               optional: true
-        - name: MLFLOW_TRACKING_ARN
-          valueFrom:
-            secretKeyRef:
-              name: mlflow-aws-credentials
-              key: MLFLOW_TRACKING_ARN
       script: |
         #!/bin/bash
         set -e
-        pip install --quiet mlflow sagemaker-mlflow boto3
+        pip install --quiet mlflow urllib3
         python3 /scripts/mlflow_logger.py \
           --results-dir "$(workspaces.results.path)" \
           --experiment "$(params.MLFLOW_EXPERIMENT)" \

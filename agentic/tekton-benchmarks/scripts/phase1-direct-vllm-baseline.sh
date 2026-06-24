@@ -27,7 +27,7 @@
 #   - Tekton tasks applied (oc apply -f tasks/)
 #   - Tekton pipelines applied (oc apply -f pipelines/)
 #   - RBAC applied (oc apply -f rbac/)
-#   - mlflow-aws-credentials secret exists in tekton-llamastack namespace
+#   - mlflow-credentials secret exists in tekton-llamastack namespace
 #   - Smoke test passed: ./scripts/phase1-smoke-test.sh
 
 set -euo pipefail
