@@ -28,7 +28,7 @@ spec:
             - "--spawn-rate"
             - "128"
             - "--run-time"
-            - "60s"
+            - "10m"
             - "--csv"
             - "/output/locust-mcp-results"
             - "--only-summary"

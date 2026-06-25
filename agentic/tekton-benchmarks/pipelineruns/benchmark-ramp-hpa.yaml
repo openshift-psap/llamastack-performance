@@ -29,7 +29,7 @@ spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 1Gi
+              storage: 5Gi
   params:
     - name: NAMESPACE
       value: "llamastack-bench"
@@ -79,4 +79,4 @@ spec:
     - name: MLFLOW_EXPERIMENT
       value: "HPA-testing"
     - name: MLFLOW_RUN_NAME_PREFIX
-      value: "hpa-memory75-poisson-256u-3000s-connttl60-v2"
+      value: "hpa-memory75-poisson-256u-3000s-connttl60-v3"

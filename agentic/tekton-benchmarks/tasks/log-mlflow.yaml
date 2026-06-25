@@ -194,6 +194,11 @@ spec:
           echo "Captured Postgres logs from $PG_POD ($(wc -l < "$RESULTS_DIR/postgres_logs.txt") lines)"
         fi
 
+        # Capture namespace events (pod scheduling, readiness, scaling)
+        echo "Capturing namespace events..."
+        oc get events -n $NS --sort-by=.lastTimestamp > "$RESULTS_DIR/namespace_events.txt" 2>&1 || true
+        echo "Captured $(wc -l < "$RESULTS_DIR/namespace_events.txt") events"
+
     - name: analyze-traces
       image: registry.access.redhat.com/ubi9/python-311:latest
       script: |

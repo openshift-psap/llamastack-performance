@@ -44,16 +44,16 @@ PVC_SIZE="120Gi"
 DEPLOY_TIMEOUT="900"
 DISTRIBUTION_NAME="llamastack-benchmark"
 
-MLFLOW_EXPERIMENT="Rhaiis_llamastack_overhead"
+MLFLOW_EXPERIMENT="Rhaiis_llamastack_overhead_1000tok"
 
-CONCURRENCY_LEVELS=(1 2 4 8 16 32 64 128)
-REPLICA_COUNTS=(1 2 4)
-REPETITIONS=3
+CONCURRENCY_LEVELS=(64 32 16 8 4 2 1)
+REPLICA_COUNTS=(1)
+REPETITIONS=1
 WARMUP_SECONDS=300         # 5 minutes
 RUN_TIME_SECONDS=300       # 5 minutes
 COOLDOWN_SECONDS=300       # 5 minutes between runs
-INPUT_TOKENS=50
-OUTPUT_TOKENS=50
+INPUT_TOKENS=1000
+OUTPUT_TOKENS=1000
 
 RESUME_FROM="${RESUME_FROM:-}"
 
@@ -215,7 +215,7 @@ spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 1Gi
+              storage: 5Gi
   params:
     - name: NAMESPACE
       value: "$NAMESPACE"

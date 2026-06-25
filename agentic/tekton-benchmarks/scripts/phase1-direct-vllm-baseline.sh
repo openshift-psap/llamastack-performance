@@ -41,15 +41,15 @@ PVC_NAME="qwen3-vl-model-pvc"
 PVC_SIZE="120Gi"
 DEPLOY_TIMEOUT="900"
 
-MLFLOW_EXPERIMENT="Rhaiis_direct_benchmark"
+MLFLOW_EXPERIMENT="Rhaiis_direct_benchmark_1000tok"
 
-CONCURRENCY_LEVELS=(1 2 4 8 16 32 64 128)
-REPETITIONS=3
+CONCURRENCY_LEVELS=(128 64 32 16 8 4 2 1)
+REPETITIONS=1
 WARMUP_SECONDS=300         # 5 minutes
 RUN_TIME_SECONDS=300       # 5 minutes
 COOLDOWN_SECONDS=300       # 5 minutes between runs
-INPUT_TOKENS=50
-OUTPUT_TOKENS=50
+INPUT_TOKENS=1000
+OUTPUT_TOKENS=1000
 
 RESUME_FROM="${RESUME_FROM:-}"
 
@@ -209,7 +209,7 @@ spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 1Gi
+              storage: 5Gi
   params:
     - name: NAMESPACE
       value: "$NAMESPACE"
