@@ -36,6 +36,8 @@ spec:
       labels:
         app: postgres
     spec:
+      nodeSelector:
+        node-role: postgres
       securityContext:
         fsGroup: 26
       nodeSelector:

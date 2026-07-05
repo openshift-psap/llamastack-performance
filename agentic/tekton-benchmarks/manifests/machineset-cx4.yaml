@@ -1,0 +1,40 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  labels:
+    machine.openshift.io/cluster-api-cluster: llamastack-perf-ocp-wj4vt
+  name: llamastack-perf-ocp-wj4vt-cx4-worker
+  namespace: openshift-machine-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: llamastack-perf-ocp-wj4vt
+      machine.openshift.io/cluster-api-machineset: llamastack-perf-ocp-wj4vt-cx4-worker
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: llamastack-perf-ocp-wj4vt
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: llamastack-perf-ocp-wj4vt-cx4-worker
+    spec:
+      providerSpec:
+        value:
+          apiVersion: ibmcloudproviderconfig.openshift.io/v1beta1
+          kind: IBMCloudMachineProviderSpec
+          credentialsSecret:
+            name: ibmcloud-credentials
+          image: llamastack-perf-ocp-wj4vt-rhcos
+          primaryNetworkInterface:
+            securityGroups:
+            - llamastack-perf-ocp-wj4vt-sg-cluster-wide
+            - llamastack-perf-ocp-wj4vt-sg-openshift-net
+            subnet: llamastack-perf-ocp-wj4vt-subnet-compute-us-south-1
+          profile: cx4-24x48
+          region: us-south
+          resourceGroup: llamastack-perf-ocp-wj4vt
+          userDataSecret:
+            name: worker-user-data
+          vpc: llamastack-perf-ocp-wj4vt-vpc
+          zone: us-south-1

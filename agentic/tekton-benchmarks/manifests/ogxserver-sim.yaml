@@ -1,0 +1,40 @@
+# OGXServer connected to the inference simulator
+# Namespace is NOT hardcoded - use: oc apply -f ogxserver-sim.yaml -n <namespace>
+#
+# Requires: RHOAI 3.5+ with ogx: Managed in the DSC.
+# PostgreSQL must be deployed separately (service name: postgres-db).
+# Inference simulator must be deployed (service name: inference-sim).
+apiVersion: ogx.io/v1beta1
+kind: OGXServer
+metadata:
+  name: ogx-benchmark
+spec:
+  distribution:
+    name: remote-vllm
+  workload:
+    replicas: 1
+    overrides:
+      env:
+        - name: VLLM_URL
+          value: "http://inference-sim:8000/v1"
+        - name: INFERENCE_MODEL
+          value: "simulator"
+        - name: VLLM_TLS_VERIFY
+          value: "false"
+        - name: POSTGRES_HOST
+          value: "postgres-db"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "llamastack"
+        - name: POSTGRES_USER
+          value: "llamastack"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_POOL_SIZE
+          value: "50"
+    storage:
+      size: 20Gi

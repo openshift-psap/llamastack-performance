@@ -1,0 +1,68 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-inference-sim
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploys llm-d-inference-sim as a drop-in replacement for vLLM.
+    Uses the manifest at manifests/inference-sim.yaml.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy the simulator
+      type: string
+      default: "llamastack-bench"
+    - name: MANIFEST_PATH
+      description: URL or path to the inference-sim manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/inference-sim.yaml"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment (assumes simulator already running)
+      type: string
+      default: "false"
+  steps:
+    - name: deploy-simulator
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping simulator deployment."
+          exit 0
+        fi
+
+        NS="$(params.NAMESPACE)"
+        NAME="inference-sim"
+
+        echo "=============================================="
+        echo "Deploying llm-d-inference-sim"
+        echo "=============================================="
+        echo "Namespace: $NS"
+        echo ""
+
+        # Clean up existing deployment
+        echo "Cleaning up existing simulator deployment..."
+        oc delete deployment $NAME -n $NS --ignore-not-found=true
+        oc delete service $NAME -n $NS --ignore-not-found=true
+        oc delete servicemonitor inference-sim-metrics -n $NS --ignore-not-found=true
+        sleep 3
+
+        # Deploy from manifest
+        echo "Applying manifest..."
+        oc apply -f $(params.MANIFEST_PATH) -n $NS
+
+        # Wait for deployment to be ready
+        echo "Waiting for simulator to be ready..."
+        oc rollout status deployment/$NAME -n $NS --timeout=120s
+
+        # Verify health
+        SIM_POD=$(oc get pods -n $NS -l app=$NAME -o jsonpath='{.items[0].metadata.name}')
+        echo "Simulator pod: $SIM_POD"
+
+        echo ""
+        echo "=============================================="
+        echo "Inference simulator deployed successfully!"
+        echo "Service: $NAME.$NS.svc.cluster.local:8000"
+        echo "ServiceMonitor: inference-sim-metrics"
+        echo "=============================================="
