@@ -84,6 +84,12 @@ spec:
         oc delete service otel-collector -n $(params.NAMESPACE) --ignore-not-found=true
         oc delete configmap otel-collector-config -n $(params.NAMESPACE) --ignore-not-found=true
         
+        # Delete inference simulator
+        echo "Deleting inference simulator..."
+        oc delete deployment inference-sim -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete service inference-sim -n $(params.NAMESPACE) --ignore-not-found=true
+        oc delete servicemonitor inference-sim-metrics -n $(params.NAMESPACE) --ignore-not-found=true
+        
         # Optionally delete MCP server
         if [ "$(params.CLEANUP_MCP)" = "true" ]; then
           echo "Deleting MCP server..."
