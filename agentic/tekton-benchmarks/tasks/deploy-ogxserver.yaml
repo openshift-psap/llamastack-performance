@@ -1,0 +1,123 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-ogxserver
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploys an OGXServer CR using the OGX operator (RHOAI 3.5+).
+    Waits for the server to be ready, then patches nodeSelector onto the deployment.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy OGXServer
+      type: string
+      default: "llamastack-bench"
+    - name: MANIFEST_PATH
+      description: URL or path to OGXServer manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/ogxserver-sim.yaml"
+    - name: SERVER_NAME
+      description: Name of the OGXServer resource
+      type: string
+      default: "ogx-benchmark"
+    - name: NODE_ROLE
+      description: Node role label for scheduling (empty = no constraint)
+      type: string
+      default: "ogx"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment
+      type: string
+      default: "false"
+  steps:
+    - name: deploy-ogxserver
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping OGXServer deployment."
+          exit 0
+        fi
+
+        NS="$(params.NAMESPACE)"
+        NAME="$(params.SERVER_NAME)"
+
+        echo "=============================================="
+        echo "Deploying OGXServer"
+        echo "=============================================="
+        echo "Namespace: $NS"
+        echo "Server: $NAME"
+        echo ""
+
+        # Verify OGX operator is ready
+        echo "Checking OGX operator status..."
+        OGX_READY=$(oc get datasciencecluster -o jsonpath='{.items[0].status.conditions[?(@.type=="OGXReady")].status}' 2>/dev/null || echo "False")
+        if [ "$OGX_READY" != "True" ]; then
+          echo "WARNING: OGX operator not ready (OGXReady=$OGX_READY)."
+          echo "Ensure ogx: Managed is set in the DSC."
+          exit 1
+        fi
+        echo "OGX operator ready."
+
+        # Clean up existing OGXServer
+        echo "Cleaning up existing OGXServer..."
+        oc delete ogxserver $NAME -n $NS --ignore-not-found=true
+        oc delete deployment $NAME -n $NS --ignore-not-found=true
+
+        # Wait for cleanup
+        echo "Waiting for previous deployment to terminate..."
+        for i in {1..30}; do
+          if ! oc get deployment $NAME -n $NS 2>/dev/null | grep -q $NAME; then
+            echo "  Previous deployment gone (after ${i}x5s)"
+            break
+          fi
+          sleep 5
+        done
+
+        # Deploy OGXServer
+        echo "Deploying OGXServer..."
+        oc apply -f $(params.MANIFEST_PATH) -n $NS
+
+        # Wait for OGXServer to be ready
+        echo "Waiting for OGXServer to be ready..."
+        timeout=300
+        counter=0
+        while [ $counter -lt $timeout ]; do
+          PHASE=$(oc get ogxserver $NAME -n $NS -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+          if [ "$PHASE" = "Ready" ]; then
+            echo ""
+            echo "OGXServer is Ready!"
+            break
+          fi
+          echo "  Status: $PHASE"
+          sleep 10
+          counter=$((counter + 10))
+        done
+
+        if [ "$PHASE" != "Ready" ]; then
+          echo "ERROR: OGXServer did not become ready in time ($timeout seconds)"
+          oc get ogxserver $NAME -n $NS -o yaml
+          exit 1
+        fi
+
+        # Patch nodeSelector if NODE_ROLE is set
+        NODE_ROLE="$(params.NODE_ROLE)"
+        if [ -n "$NODE_ROLE" ]; then
+          echo "Patching deployment with nodeSelector: node-role=$NODE_ROLE"
+          DEPLOY_NAME=$(oc get deployment -n $NS -l app.kubernetes.io/name=ogx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "$NAME")
+          oc patch deployment $DEPLOY_NAME -n $NS --type merge \
+            -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"node-role\":\"$NODE_ROLE\"}}}}}"
+          echo "Waiting for rollout..."
+          oc rollout status deployment/$DEPLOY_NAME -n $NS --timeout=120s
+        fi
+
+        # Get server info
+        SERVER_VERSION=$(oc get ogxserver $NAME -n $NS -o jsonpath='{.status.serverVersion}' 2>/dev/null || echo "unknown")
+
+        echo ""
+        echo "=============================================="
+        echo "OGXServer deployed successfully!"
+        echo "  Server version: $SERVER_VERSION"
+        echo "  Node role: $NODE_ROLE"
+        echo "=============================================="
