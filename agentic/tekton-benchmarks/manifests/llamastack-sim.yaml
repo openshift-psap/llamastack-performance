@@ -1,0 +1,51 @@
+# LlamaStack Distribution connected to the inference simulator
+# Namespace is NOT hardcoded - use: oc apply -f llamastack-sim.yaml -n <namespace>
+#
+# Requires: RHOAI 3.4.0-ea.2+ with llamastackoperator set to Managed in the DSC.
+# PostgreSQL must be deployed separately (service name: postgres-db).
+# Inference simulator must be deployed (service name: inference-sim).
+apiVersion: llamastack.io/v1alpha1
+kind: LlamaStackDistribution
+metadata:
+  name: llamastack-benchmark
+spec:
+  replicas: 1
+  server:
+    containerSpec:
+      env:
+        - name: VLLM_URL
+          value: "http://inference-sim:8000/v1"
+        - name: INFERENCE_MODEL
+          value: "simulator"
+        - name: VLLM_TLS_VERIFY
+          value: "false"
+        - name: ENABLE_SENTENCE_TRANSFORMERS
+          value: "true"
+        - name: EMBEDDING_PROVIDER
+          value: "sentence-transformers"
+        - name: POSTGRES_HOST
+          value: "postgres-db"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "llamastack"
+        - name: POSTGRES_USER
+          value: "llamastack"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_POOL_SIZE
+          value: "50"
+      name: llama-stack
+      port: 8321
+    distribution:
+      name: rh-dev
+    storage:
+      size: 20Gi
+  network:
+    allowedFrom:
+      namespaces:
+        - "llamastack-bench"
+        - "tekton-llamastack"
