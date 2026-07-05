@@ -10,7 +10,7 @@ metadata:
   name: ogx-benchmark
 spec:
   distribution:
-    name: remote-vllm
+    name: rh-dev
   workload:
     replicas: 1
     overrides:
