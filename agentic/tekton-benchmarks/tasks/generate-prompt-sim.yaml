@@ -1,0 +1,47 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: generate-prompt-sim
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Downloads pre-generated synthetic prompt from GitHub to the shared workspace.
+    Prompts were generated offline from the simulator and are stored in the repo.
+  params:
+    - name: INPUT_TOKENS
+      description: "Target prompt size (50, 500, or 2000)"
+      type: string
+      default: "50"
+    - name: PROMPTS_BASE_URL
+      description: "Base URL for prompt files in GitHub"
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/prompts"
+  workspaces:
+    - name: results
+      description: Shared workspace where the prompt is written (same PVC Locust reads from)
+  steps:
+    - name: download-prompt
+      image: curlimages/curl:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        INPUT_TOKENS="$(params.INPUT_TOKENS)"
+        BASE_URL="$(params.PROMPTS_BASE_URL)"
+        OUTPUT_FILE="$(workspaces.results.path)/synthetic_prompt.txt"
+
+        echo "=============================================="
+        echo "Downloading synthetic prompt: ${INPUT_TOKENS} tokens"
+        echo "=============================================="
+
+        curl -sL "${BASE_URL}/prompt_${INPUT_TOKENS}.txt" -o "$OUTPUT_FILE"
+
+        if [ ! -s "$OUTPUT_FILE" ]; then
+          echo "ERROR: Downloaded file is empty"
+          exit 1
+        fi
+
+        echo "Prompt downloaded successfully!"
+        echo "  File: ${OUTPUT_FILE}"
+        echo "  Size: $(wc -c < "$OUTPUT_FILE") bytes"
+        echo "=============================================="
