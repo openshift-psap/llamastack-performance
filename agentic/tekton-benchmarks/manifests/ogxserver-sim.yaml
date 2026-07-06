@@ -48,3 +48,14 @@ spec:
           value: "none"
     storage:
       size: 20Gi
+  network:
+    policy:
+      ingress:
+      - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tekton-llamastack
+        ports:
+        - port: 8321
+          protocol: TCP
