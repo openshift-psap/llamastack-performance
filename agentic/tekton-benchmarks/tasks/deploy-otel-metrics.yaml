@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-otel-metrics
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Deploys a metrics-only OTel collector (no traces, no Tempo).
+    Receives OTLP metrics from OGX and exposes them as Prometheus format.
+  params:
+    - name: NAMESPACE
+      description: Namespace to deploy the OTel collector
+      type: string
+      default: "llamastack-bench"
+    - name: MANIFEST_PATH
+      description: URL or path to the OTel collector manifest
+      type: string
+      default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/otel-collector-metrics-only.yaml"
+    - name: SKIP_DEPLOY
+      description: If "true", skips deployment
+      type: string
+      default: "false"
+  steps:
+    - name: deploy-otel
+      image: quay.io/openshift/origin-cli:latest
+      script: |
+        #!/bin/bash
+        set -e
+
+        if [ "$(params.SKIP_DEPLOY)" = "true" ]; then
+          echo "SKIP_DEPLOY is true, skipping OTel collector deployment."
+          exit 0
+        fi
+
+        NS="$(params.NAMESPACE)"
+
+        echo "=============================================="
+        echo "Deploying OTel Collector (metrics only)"
+        echo "=============================================="
+        echo "Namespace: $NS"
+        echo ""
+
+        # Clean up existing
+        echo "Cleaning up existing OTel collector..."
+        oc delete deployment otel-collector -n $NS --ignore-not-found=true
+        oc delete service otel-collector -n $NS --ignore-not-found=true
+        oc delete configmap otel-collector-config -n $NS --ignore-not-found=true
+        oc delete servicemonitor otel-collector-metrics -n $NS --ignore-not-found=true
+        sleep 3
+
+        # Deploy from manifest
+        echo "Applying manifest..."
+        curl -sL $(params.MANIFEST_PATH) | oc apply -n $NS -f -
+
+        # Wait for deployment
+        echo "Waiting for OTel collector to be ready..."
+        oc wait --for=condition=available deployment/otel-collector -n $NS --timeout=60s
+
+        # Validate metrics endpoint is accessible
+        echo "Validating metrics endpoint..."
+        OC_POD=$(oc get pods -n $NS -l app=otel-collector -o jsonpath='{.items[0].metadata.name}')
+        echo "OTel collector pod: $OC_POD"
+
+        echo ""
+        echo "=============================================="
+        echo "OTel Collector deployed successfully!"
+        echo "  OTLP endpoint: otel-collector.$NS.svc:4318"
+        echo "  Prometheus endpoint: otel-collector.$NS.svc:8889/metrics"
+        echo "=============================================="

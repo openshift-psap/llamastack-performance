@@ -36,5 +36,13 @@ spec:
               key: POSTGRES_PASSWORD
         - name: POSTGRES_POOL_SIZE
           value: "50"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_SERVICE_NAME
+          value: "ogx"
+        - name: OTEL_SDK_DISABLED
+          value: "false"
     storage:
       size: 20Gi
