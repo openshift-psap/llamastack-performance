@@ -77,7 +77,7 @@ spec:
 
         # Deploy OGXServer
         echo "Deploying OGXServer..."
-        oc apply -f $(params.MANIFEST_PATH) -n $NS
+        curl -sL $(params.MANIFEST_PATH) | oc apply -n $NS -f -
 
         # Wait for OGXServer to be ready
         echo "Waiting for OGXServer to be ready..."

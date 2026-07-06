@@ -254,31 +254,11 @@ spec:
 
         echo ""
         echo "=============================================="
-        echo "Test Complete — waiting for HPA metrics"
+        echo "Test Complete — waiting for Prometheus metrics"
         echo "=============================================="
 
-        # Signal to HPA sidecar that test is done
+        # Signal sidecars that test is done
         touch /shared/locust_complete
-
-        # Wait for HPA sidecar to finish post-test collection
-        WAIT_MAX=$((HPA_POST_TEST_SECONDS + 15))
-        WAITED=0
-        while [ $WAITED -lt $WAIT_MAX ]; do
-          if [ -f /shared/hpa_done ]; then
-            echo "HPA collection complete"
-            break
-          fi
-          sleep 2
-          WAITED=$((WAITED + 2))
-        done
-
-        # Copy HPA metrics to workspace
-        if [ -f /shared/hpa-metrics.jsonl ]; then
-          cp /shared/hpa-metrics.jsonl "$LOCUST_OUTPUT_DIR/hpa-metrics.jsonl"
-          echo "HPA metrics copied to workspace"
-        else
-          echo "WARNING: No HPA metrics file found"
-        fi
 
         # Wait for Prometheus scraper sidecar to finish
         WAITED=0
@@ -302,70 +282,6 @@ spec:
         echo "Result files:"
         ls -la "$LOCUST_OUTPUT_DIR/"
   sidecars:
-    - name: hpa-metrics-scraper
-      image: nicolaka/netshoot:latest
-      env:
-        - name: NAMESPACE
-          value: $(params.NAMESPACE)
-        - name: POST_TEST_SECONDS
-          value: $(params.HPA_POST_TEST_SECONDS)
-        - name: DISTRIBUTION_NAME
-          value: $(params.DISTRIBUTION_NAME)
-      volumeMounts:
-        - mountPath: /shared
-          name: shared
-      script: |
-        #!/bin/bash
-        HPA_FILE="/shared/hpa-metrics.jsonl"
-        SIGNAL_FILE="/shared/locust_complete"
-        TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-        API_SERVER="https://kubernetes.default.svc"
-        SAMPLE=0
-        POST_COUNTER=0
-        LOCUST_DONE=false
-        PHASE="during_test"
-
-        while true; do
-          SAMPLE=$((SAMPLE + 1))
-          TIMESTAMP=$(date -Iseconds)
-
-          RAW_METRICS=$(curl -sk -H "Authorization: Bearer $TOKEN" \
-            "$API_SERVER/apis/metrics.k8s.io/v1beta1/namespaces/$NAMESPACE/pods" 2>/dev/null || echo "{}")
-
-          METRICS=$(echo "$RAW_METRICS" | jq -c "[.items[]? | select(.metadata.name | startswith(\"$DISTRIBUTION_NAME\")) | {
-            pod: .metadata.name,
-            memory_ki: (.containers[0].usage.memory | rtrimstr(\"Ki\") | tonumber // 0),
-            cpu_n: (.containers[0].usage.cpu | rtrimstr(\"n\") | tonumber // 0)
-          }]" 2>/dev/null || echo "[]")
-
-          POD_COUNT=$(echo "$METRICS" | jq 'length' 2>/dev/null || echo "0")
-          AVG_MEM=$(echo "$METRICS" | jq 'if length > 0 then ([.[].memory_ki] | add / length | floor) else 0 end' 2>/dev/null || echo "0")
-          AVG_CPU=$(echo "$METRICS" | jq 'if length > 0 then ([.[].cpu_n] | add / length | floor) else 0 end' 2>/dev/null || echo "0")
-
-          HPA_RAW=$(curl -sk -H "Authorization: Bearer $TOKEN" \
-            "$API_SERVER/apis/autoscaling/v2/namespaces/$NAMESPACE/horizontalpodautoscalers" 2>/dev/null || echo "{}")
-          HPA=$(echo "$HPA_RAW" | jq -c ".items[]? | select(.metadata.name | contains(\"llamastack\")) | {
-            currentReplicas: .status.currentReplicas,
-            desiredReplicas: .status.desiredReplicas,
-            currentMemoryPct: ((.status.currentMetrics[]? | select(.resource.name==\"memory\") | .resource.current.averageUtilization) // null),
-            currentCPUPct: ((.status.currentMetrics[]? | select(.resource.name==\"cpu\") | .resource.current.averageUtilization) // null)
-          }" 2>/dev/null || echo "{}")
-          [ -z "$HPA" ] && HPA="{}"
-
-          if [ -f "$SIGNAL_FILE" ] && [ "$LOCUST_DONE" = "false" ]; then
-            LOCUST_DONE=true
-          fi
-          [ "$LOCUST_DONE" = "true" ] && PHASE="post_test" && POST_COUNTER=$((POST_COUNTER + 1))
-
-          echo "{\"timestamp\":\"$TIMESTAMP\",\"sample\":$SAMPLE,\"phase\":\"$PHASE\",\"pod_count\":$POD_COUNT,\"avg_memory_ki\":$AVG_MEM,\"avg_cpu_n\":$AVG_CPU,\"hpa\":$HPA}" >> "$HPA_FILE"
-
-          if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
-            touch /shared/hpa_done
-            sleep infinity
-          fi
-
-          sleep 1
-        done
     - name: prometheus-scraper
       image: nicolaka/netshoot:latest
       env:
