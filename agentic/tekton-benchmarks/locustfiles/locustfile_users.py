@@ -13,6 +13,9 @@ Token profile control (ChatCompletionsUser and ResponsesSimpleUser):
                    When > 0, sends max_output_tokens to LlamaStack and passes
                    ignore_eos/stop_token_ids via extra_body to force vLLM to
                    generate exactly this many tokens without stopping at EOS.
+    STREAM:        "true" or "false" (default: "true"). Controls whether requests
+                   use SSE streaming. When streaming, E2E latency is measured as
+                   time from request sent to stream completion.
 """
 import os
 import sys
@@ -31,8 +34,9 @@ _user_counter = 0
 _user_counter_lock = threading.Lock()
 
 CONNECTION_TTL = int(os.environ.get("CONNECTION_TTL_SECONDS", "0"))
+STREAM = os.environ.get("STREAM", "true").lower() == "true"
 
-print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, CONNECTION_TTL={CONNECTION_TTL}s, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
+print(f"[locustfile_users] Module loaded. INPUT_TOKENS={os.environ.get('INPUT_TOKENS', '0')}, CONNECTION_TTL={CONNECTION_TTL}s, STREAM={STREAM}, LOCUST_OUTPUT_DIR={os.environ.get('LOCUST_OUTPUT_DIR', '')}", file=sys.stderr, flush=True)
 
 
 def _load_prompts():
@@ -91,6 +95,46 @@ def _maybe_recycle_connection(user):
         user._conn_created_at = now
 
 
+def _consume_sse_stream(response):
+    """Consume an SSE stream, return (success, token_count, error_msg).
+
+    Reads all lines from the stream until completion. Counts content delta
+    events as tokens. Returns success=True if stream completed normally."""
+    token_count = 0
+    stream_start = time.time()
+    try:
+        for line in response.iter_lines():
+            if not line:
+                continue
+            decoded = line.decode("utf-8") if isinstance(line, bytes) else line
+            if decoded.startswith("data: "):
+                data_str = decoded[6:]
+                if data_str == "[DONE]":
+                    break
+                try:
+                    data = json.loads(data_str)
+                    event_type = data.get("type", "")
+                    if event_type == "response.output_text.delta":
+                        token_count += 1
+                        elapsed = (time.time() - stream_start) * 1000
+                        print(f"[stream-debug] token #{token_count} at {elapsed:.1f}ms: {data.get('delta', '')[:20]}", file=sys.stderr, flush=True)
+                    elif "choices" in data:
+                        delta = data["choices"][0].get("delta", {}) if data["choices"] else {}
+                        if delta.get("content"):
+                            token_count += 1
+                            elapsed = (time.time() - stream_start) * 1000
+                            print(f"[stream-debug] token #{token_count} at {elapsed:.1f}ms: {delta['content'][:20]}", file=sys.stderr, flush=True)
+                    elif event_type in ("response.completed", "response.incomplete"):
+                        break
+                except json.JSONDecodeError:
+                    pass
+        total_ms = (time.time() - stream_start) * 1000
+        print(f"[stream-debug] Stream complete: {token_count} tokens in {total_ms:.1f}ms", file=sys.stderr, flush=True)
+        return True, token_count, None
+    except Exception as e:
+        return False, token_count, str(e)
+
+
 class ResponsesMCPUser(HttpUser):
     """Responses API with MCP tool calling — full agentic flow."""
     wait_time = constant(0)
@@ -142,6 +186,7 @@ class ResponsesSimpleUser(HttpUser):
     synthetic_prompts.jsonl to avoid vLLM prefix cache hits.
     When OUTPUT_TOKENS > 0, sets max_output_tokens and passes ignore_eos + stop_token_ids
     via extra_body so LlamaStack forwards them to vLLM's chat completion call.
+    Supports streaming (STREAM=true) and non-streaming (STREAM=false) modes.
     """
     wait_time = constant(0)
     abstract = True
@@ -155,7 +200,7 @@ class ResponsesSimpleUser(HttpUser):
 
         if self.input_tokens > 0 and ResponsesSimpleUser._prompts is None:
             ResponsesSimpleUser._prompts = _load_prompts()
-        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}, prompts_available={len(ResponsesSimpleUser._prompts) if ResponsesSimpleUser._prompts else 0}", file=sys.stderr, flush=True)
+        print(f"[ResponsesSimpleUser] on_start: input_tokens={self.input_tokens}, output_tokens={self.output_tokens}, stream={STREAM}, prompts_available={len(ResponsesSimpleUser._prompts) if ResponsesSimpleUser._prompts else 0}", file=sys.stderr, flush=True)
 
     @task
     def call_responses_simple(self):
@@ -170,30 +215,48 @@ class ResponsesSimpleUser(HttpUser):
         payload = {
             "model": self.model,
             "input": prompt,
-            "stream": False,
+            "stream": STREAM,
         }
         if self.output_tokens > 0:
             payload["max_output_tokens"] = self.output_tokens
             payload["ignore_eos"] = True
             payload["stop_token_ids"] = []
 
-        with self.client.post(
-            "/v1/responses",
-            json=payload,
-            name="responses-simple",
-            catch_response=True
-        ) as response:
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if "output" in data or "choices" in data:
+        if STREAM:
+            start_time = time.time()
+            with self.client.post(
+                "/v1/responses",
+                json=payload,
+                name="responses-simple",
+                catch_response=True,
+                stream=True
+            ) as response:
+                if response.status_code == 200:
+                    success, tokens, err = _consume_sse_stream(response)
+                    if success:
                         response.success()
                     else:
-                        response.failure(f"Unexpected response format: {list(data.keys())}")
-                except json.JSONDecodeError:
-                    response.failure("Invalid JSON response")
-            else:
-                response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+                        response.failure(f"Stream error: {err}")
+                else:
+                    response.failure(f"HTTP {response.status_code}")
+        else:
+            with self.client.post(
+                "/v1/responses",
+                json=payload,
+                name="responses-simple",
+                catch_response=True
+            ) as response:
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        if "output" in data or "choices" in data:
+                            response.success()
+                        else:
+                            response.failure(f"Unexpected response format: {list(data.keys())}")
+                    except json.JSONDecodeError:
+                        response.failure("Invalid JSON response")
+                else:
+                    response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
         _maybe_recycle_connection(self)
 
 
@@ -264,6 +327,7 @@ class ChatCompletionsUser(HttpUser):
     When INPUT_TOKENS > 0, each request picks a random prompt from
     synthetic_prompts.jsonl to avoid vLLM prefix cache hits.
     When OUTPUT_TOKENS > 0, forces exact output length via ignore_eos and stop=null.
+    Supports streaming (STREAM=true) and non-streaming (STREAM=false) modes.
     """
     wait_time = constant(0)
     abstract = True
@@ -292,28 +356,46 @@ class ChatCompletionsUser(HttpUser):
             "model": self.model,
             "messages": [
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            "stream": STREAM,
         }
         if self.output_tokens > 0:
             payload["max_tokens"] = self.output_tokens
             payload["stop"] = None
             payload["ignore_eos"] = True
 
-        with self.client.post(
-            "/v1/chat/completions",
-            json=payload,
-            name="chat-completions",
-            catch_response=True
-        ) as response:
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if "choices" in data:
+        if STREAM:
+            with self.client.post(
+                "/v1/chat/completions",
+                json=payload,
+                name="chat-completions",
+                catch_response=True,
+                stream=True
+            ) as response:
+                if response.status_code == 200:
+                    success, tokens, err = _consume_sse_stream(response)
+                    if success:
                         response.success()
                     else:
-                        response.failure(f"Unexpected response format: {list(data.keys())}")
-                except json.JSONDecodeError:
-                    response.failure("Invalid JSON response")
-            else:
-                response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
+                        response.failure(f"Stream error: {err}")
+                else:
+                    response.failure(f"HTTP {response.status_code}")
+        else:
+            with self.client.post(
+                "/v1/chat/completions",
+                json=payload,
+                name="chat-completions",
+                catch_response=True
+            ) as response:
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        if "choices" in data:
+                            response.success()
+                        else:
+                            response.failure(f"Unexpected response format: {list(data.keys())}")
+                    except json.JSONDecodeError:
+                        response.failure("Invalid JSON response")
+                else:
+                    response.failure(f"HTTP {response.status_code}: {response.text[:200]}")
         _maybe_recycle_connection(self)

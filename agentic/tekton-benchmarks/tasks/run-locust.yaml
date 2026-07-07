@@ -89,6 +89,10 @@ spec:
       default: "0"
       description: "Target output tokens per request (0 = no limit)"
       type: string
+    - name: STREAM
+      default: "true"
+      description: "Enable SSE streaming (true/false)"
+      type: string
     - name: WARMUP_SECONDS
       default: "0"
       description: "Seconds to wait before starting Locust (allows Prometheus to start scraping)"
@@ -132,6 +136,8 @@ spec:
           value: $(params.INPUT_TOKENS)
         - name: OUTPUT_TOKENS
           value: $(params.OUTPUT_TOKENS)
+        - name: STREAM
+          value: $(params.STREAM)
       volumeMounts:
         - mountPath: /configmap
           name: locustfiles
@@ -155,6 +161,7 @@ spec:
         echo "Output Dir: $LOCUST_OUTPUT_DIR"
         echo "Input Tokens: $INPUT_TOKENS"
         echo "Output Tokens: $OUTPUT_TOKENS"
+        echo "Stream: $STREAM"
         echo "=============================================="
 
         # Create directory structure from ConfigMap
@@ -282,8 +289,14 @@ spec:
         echo "Result files:"
         ls -la "$LOCUST_OUTPUT_DIR/"
   sidecars:
+    - name: sidecar-placeholder
+      image: busybox
+      command: ["sh", "-c", "sleep infinity"]
+      volumeMounts:
+        - mountPath: /shared
+          name: shared
     - name: prometheus-scraper
-      image: nicolaka/netshoot:latest
+      image: nicolaka/netshoot:v0.12
       env:
         - name: NAMESPACE
           value: $(params.NAMESPACE)
@@ -375,7 +388,7 @@ spec:
 
           if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
             touch /shared/prom_done
-            sleep infinity
+            exit 0
           fi
 
           sleep 5
