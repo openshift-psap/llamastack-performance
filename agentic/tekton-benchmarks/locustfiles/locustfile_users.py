@@ -101,7 +101,6 @@ def _consume_sse_stream(response):
     Reads all lines from the stream until completion. Counts content delta
     events as tokens. Returns success=True if stream completed normally."""
     token_count = 0
-    stream_start = time.time()
     try:
         for line in response.iter_lines():
             if not line:
@@ -116,20 +115,14 @@ def _consume_sse_stream(response):
                     event_type = data.get("type", "")
                     if event_type == "response.output_text.delta":
                         token_count += 1
-                        elapsed = (time.time() - stream_start) * 1000
-                        print(f"[stream-debug] token #{token_count} at {elapsed:.1f}ms: {data.get('delta', '')[:20]}", file=sys.stderr, flush=True)
                     elif "choices" in data:
                         delta = data["choices"][0].get("delta", {}) if data["choices"] else {}
                         if delta.get("content"):
                             token_count += 1
-                            elapsed = (time.time() - stream_start) * 1000
-                            print(f"[stream-debug] token #{token_count} at {elapsed:.1f}ms: {delta['content'][:20]}", file=sys.stderr, flush=True)
                     elif event_type in ("response.completed", "response.incomplete"):
                         break
                 except json.JSONDecodeError:
                     pass
-        total_ms = (time.time() - stream_start) * 1000
-        print(f"[stream-debug] Stream complete: {token_count} tokens in {total_ms:.1f}ms", file=sys.stderr, flush=True)
         return True, token_count, None
     except Exception as e:
         return False, token_count, str(e)
@@ -223,7 +216,6 @@ class ResponsesSimpleUser(HttpUser):
             payload["stop_token_ids"] = []
 
         if STREAM:
-            start_time = time.time()
             with self.client.post(
                 "/v1/responses",
                 json=payload,

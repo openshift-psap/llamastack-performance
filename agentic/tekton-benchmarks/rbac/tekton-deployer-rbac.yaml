@@ -20,6 +20,14 @@ rules:
   - apiGroups: ["llamastack.io"]
     resources: ["llamastackdistributions"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For deploying OGXServer (RHOAI 3.5+)
+  - apiGroups: ["ogx.io"]
+    resources: ["ogxservers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # For checking OGX operator readiness
+  - apiGroups: ["datasciencecluster.opendatahub.io"]
+    resources: ["datascienceclusters"]
+    verbs: ["get", "list"]
   # For deploying vLLM (KServe)
   - apiGroups: ["serving.kserve.io"]
     resources: ["inferenceservices", "servingruntimes"]

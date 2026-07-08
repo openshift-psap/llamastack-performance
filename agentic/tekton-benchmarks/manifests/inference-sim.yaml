@@ -25,7 +25,7 @@ spec:
         - "--port"
         - "8000"
         - "--max-num-seqs"
-        - "1000"
+        - "2048"
         - "--max-model-len"
         - "8192"
         - "--time-to-first-token"

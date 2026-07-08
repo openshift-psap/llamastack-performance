@@ -57,7 +57,7 @@ spec:
         
         # Deploy fresh PostgreSQL
         echo "Deploying fresh PostgreSQL..."
-        oc apply -f $(params.MANIFEST_PATH) -n $(params.NAMESPACE)
+        curl -sL $(params.MANIFEST_PATH) | oc apply -n $(params.NAMESPACE) -f -
 
         # Create custom queries ConfigMap for postgres-exporter (table sizes)
         QUERIES_URL=$(echo "$(params.MANIFEST_PATH)" | sed 's|/postgres.yaml|/postgres-exporter-queries.yaml|')

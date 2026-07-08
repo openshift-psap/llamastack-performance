@@ -16,6 +16,14 @@ spec:
       description: URL or path to the inference-sim manifest
       type: string
       default: "https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/manifests/inference-sim.yaml"
+    - name: TTFT_MS
+      description: "Time to first token in milliseconds (e.g., 1, 130, 400, 3700)"
+      type: string
+      default: "1"
+    - name: ITL_MS
+      description: "Inter-token latency in milliseconds (e.g., 1, 7, 30, 85)"
+      type: string
+      default: "1"
     - name: SKIP_DEPLOY
       description: If "true", skips deployment (assumes simulator already running)
       type: string
@@ -34,11 +42,15 @@ spec:
 
         NS="$(params.NAMESPACE)"
         NAME="inference-sim"
+        TTFT="$(params.TTFT_MS)"
+        ITL="$(params.ITL_MS)"
 
         echo "=============================================="
         echo "Deploying llm-d-inference-sim"
         echo "=============================================="
         echo "Namespace: $NS"
+        echo "TTFT: ${TTFT}ms"
+        echo "ITL:  ${ITL}ms"
         echo ""
 
         # Clean up existing deployment
@@ -48,9 +60,12 @@ spec:
         oc delete servicemonitor inference-sim-metrics -n $NS --ignore-not-found=true
         sleep 3
 
-        # Deploy from manifest
-        echo "Applying manifest..."
-        oc apply -f $(params.MANIFEST_PATH) -n $NS
+        # Deploy from manifest, patching TTFT and ITL values
+        echo "Applying manifest with TTFT=${TTFT}ms, ITL=${ITL}ms..."
+        MANIFEST=$(curl -sL $(params.MANIFEST_PATH))
+        MANIFEST=$(echo "$MANIFEST" | sed '/--time-to-first-token/{n;s/"[0-9]*ms"/"'"${TTFT}ms"'"/}')
+        MANIFEST=$(echo "$MANIFEST" | sed '/--inter-token-latency/{n;s/"[0-9]*ms"/"'"${ITL}ms"'"/}')
+        echo "$MANIFEST" | oc apply -n $NS -f -
 
         # Wait for deployment to be ready
         echo "Waiting for simulator to be ready..."
@@ -64,5 +79,5 @@ spec:
         echo "=============================================="
         echo "Inference simulator deployed successfully!"
         echo "Service: $NAME.$NS.svc.cluster.local:8000"
-        echo "ServiceMonitor: inference-sim-metrics"
+        echo "TTFT: ${TTFT}ms | ITL: ${ITL}ms"
         echo "=============================================="
