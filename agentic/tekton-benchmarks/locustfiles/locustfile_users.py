@@ -99,8 +99,11 @@ def _consume_sse_stream(response):
     """Consume an SSE stream, return (success, token_count, error_msg).
 
     Reads all lines from the stream until completion. Counts content delta
-    events as tokens. Returns success=True if stream completed normally."""
+    events as tokens. Adds stream consumption time to response.request_meta
+    so Locust reports full E2E latency (not just time-to-headers).
+    Returns success=True if stream completed normally."""
     token_count = 0
+    start_perf_counter = time.perf_counter()
     try:
         for line in response.iter_lines():
             if not line:
@@ -123,8 +126,12 @@ def _consume_sse_stream(response):
                         break
                 except json.JSONDecodeError:
                     pass
+        stream_time_ms = (time.perf_counter() - start_perf_counter) * 1000
+        response.request_meta['response_time'] += stream_time_ms
         return True, token_count, None
     except Exception as e:
+        stream_time_ms = (time.perf_counter() - start_perf_counter) * 1000
+        response.request_meta['response_time'] += stream_time_ms
         return False, token_count, str(e)
 
 
