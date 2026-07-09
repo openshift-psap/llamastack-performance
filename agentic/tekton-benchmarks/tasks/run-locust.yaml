@@ -109,6 +109,13 @@ spec:
   steps:
     - name: setup-and-run
       image: $(params.LOCUST_IMAGE)
+      resources:
+        requests:
+          cpu: "8"
+          memory: "4Gi"
+        limits:
+          cpu: "8"
+          memory: "8Gi"
       env:
         - name: USERS
           value: $(params.USERS)
@@ -249,6 +256,7 @@ spec:
           --host $(params.HOST) \
           --headless \
           --only-summary \
+          --processes 8 \
           --csv "$LOCUST_OUTPUT_DIR/locust-results" || LOCUST_EXIT=$?
         if [ $LOCUST_EXIT -ne 0 ]; then
           echo "WARNING: Locust exited with code $LOCUST_EXIT (expected if any requests failed)"
@@ -388,7 +396,7 @@ spec:
 
           if [ "$LOCUST_DONE" = "true" ] && [ $POST_COUNTER -ge ${POST_TEST_SECONDS:-30} ]; then
             touch /shared/prom_done
-            exit 0
+            sleep infinity
           fi
 
           sleep 5
