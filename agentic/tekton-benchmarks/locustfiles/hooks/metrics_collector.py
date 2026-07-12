@@ -6,6 +6,8 @@ and writes all results to files in LOCUST_OUTPUT_DIR for the MLflow task to pick
 In distributed / --processes mode:
   - Workers do not write result files (they only generate load).
   - The master (or standalone LocalRunner) owns all file writes.
+  - Timeseries sampling runs until quit (not test_stop), then a final
+    post-merge sample is appended so last totals match the summary.
   - Summary is written on the quit event, after workers have sent final
     stats reports and Locust has merged them into the master aggregate.
 
@@ -47,7 +49,8 @@ def _register_listeners():
     os.environ["_METRICS_HOOKS_REGISTERED"] = _MODULE_ID
 
     events.test_start.add_listener(_on_test_start)
-    events.test_stop.add_listener(_on_test_stop)
+    # Do not stop sampling on test_stop: in --processes mode that fires before
+    # workers flush final stats. Sampling continues until quit / _write_results.
     events.quit.add_listener(_on_quit)
 
 
@@ -71,6 +74,23 @@ def _on_test_start(environment, **kwargs):
     _start_timeseries_sampling(environment)
 
 
+def _capture_sample(environment, second):
+    """Snapshot master aggregate stats into one timeseries point."""
+    runner = environment.runner
+    stats = runner.stats.total
+    return {
+        "second": second,
+        "active_users": runner.user_count,
+        "target_users": runner.target_user_count or 0,
+        "requests_per_sec": round(stats.current_rps, 2),
+        "failures_per_sec": round(stats.current_fail_per_sec, 2),
+        "avg_response_time_ms": round(stats.avg_response_time, 2),
+        "total_requests": stats.num_requests,
+        "total_failures": stats.num_failures,
+        "fail_ratio": round(stats.fail_ratio, 4),
+    }
+
+
 def _start_timeseries_sampling(environment):
     global _sampling_greenlet
 
@@ -79,19 +99,7 @@ def _start_timeseries_sampling(environment):
         while True:
             gevent.sleep(1)
             try:
-                runner = environment.runner
-                stats = runner.stats.total
-                _timeseries_buffer.append({
-                    "second": second,
-                    "active_users": runner.user_count,
-                    "target_users": runner.target_user_count or 0,
-                    "requests_per_sec": round(stats.current_rps, 2),
-                    "failures_per_sec": round(stats.current_fail_per_sec, 2),
-                    "avg_response_time_ms": round(stats.avg_response_time, 2),
-                    "total_requests": stats.num_requests,
-                    "total_failures": stats.num_failures,
-                    "fail_ratio": round(stats.fail_ratio, 4),
-                })
+                _timeseries_buffer.append(_capture_sample(environment, second))
             except Exception:
                 pass
             second += 1
@@ -106,17 +114,6 @@ def _stop_timeseries_sampling():
         _sampling_greenlet = None
 
 
-def _on_test_stop(environment, **kwargs):
-    """Freeze the timeseries sampler at end of test; do not write files yet.
-
-    In distributed mode, test_stop fires on the master before workers send
-    their final stats reports. Summary/file writes happen later on quit.
-    """
-    if _is_worker(environment):
-        return
-    _stop_timeseries_sampling()
-
-
 def _write_results(environment):
     """Write timeseries + summary from the master's final aggregated stats."""
     global _summary_written, _run_started
@@ -128,6 +125,7 @@ def _write_results(environment):
     if _is_worker(environment):
         return
 
+    # Stop on quit (not test_stop) so samples cover the final worker merge window.
     _stop_timeseries_sampling()
 
     output_dir = os.environ.get("LOCUST_OUTPUT_DIR", "/tmp")
@@ -135,6 +133,13 @@ def _write_results(environment):
         f.write(f"{time.time():.6f}")
 
     stats = environment.runner.stats.total
+
+    # Explicit final sample after merge so last timeseries totals match summary.
+    next_second = (_timeseries_buffer[-1]["second"] + 1) if _timeseries_buffer else 0
+    try:
+        _timeseries_buffer.append(_capture_sample(environment, next_second))
+    except Exception:
+        pass
 
     print("\n" + "=" * 60)
     print("TEST SUMMARY")

@@ -111,10 +111,10 @@ spec:
       image: $(params.LOCUST_IMAGE)
       resources:
         requests:
-          cpu: "20"
+          cpu: "10"
           memory: "4Gi"
         limits:
-          cpu: "20"
+          cpu: "10"
           memory: "8Gi"
       env:
         - name: USERS
@@ -256,7 +256,7 @@ spec:
           --host $(params.HOST) \
           --headless \
           --only-summary \
-          --processes 19 \
+          --processes 9 \
           --csv "$LOCUST_OUTPUT_DIR/locust-results" || LOCUST_EXIT=$?
         if [ $LOCUST_EXIT -ne 0 ]; then
           echo "WARNING: Locust exited with code $LOCUST_EXIT (expected if any requests failed)"
