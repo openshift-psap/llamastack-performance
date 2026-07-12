@@ -215,10 +215,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     model_short = test_params.get("model", "unknown").split("/")[-1]
     users = test_params.get("users", "?")
-    if args.run_name_prefix and args.run_name_prefix != "tekton":
-        run_name = args.run_name_prefix
-    else:
-        run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
+    run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
 
     batch_params = [Param(key=k, value=str(v)) for k, v in test_params.items()]
     for k, v in cluster_versions.items():
