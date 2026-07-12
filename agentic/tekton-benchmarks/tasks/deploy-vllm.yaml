@@ -11,7 +11,7 @@ spec:
     - name: NAMESPACE
       description: Namespace to deploy vLLM
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: MODEL_NAME
       description: Name of the model/InferenceService
       type: string

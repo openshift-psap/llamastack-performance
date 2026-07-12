@@ -25,7 +25,7 @@ spec:
     - name: OTEL_SERVICE_NAME
       description: Service name to filter traces in Tempo
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: USERS
       type: string
       default: "10"
@@ -122,14 +122,17 @@ spec:
           fi
         fi
 
-        # --- LlamaStack info (only for LlamaStack tests) ---
+        # --- OGX / LlamaStack info ---
         LS_IMAGE="n/a"
         LS_OPERATOR_VERSION="n/a"
         PG_IMAGE="n/a"
         if [ "$USER_CLASS" != "ChatCompletionsUser" ]; then
-          LS_OPERATOR_VERSION=$(oc get csv -n llama-stack-k8s-operator-system -o jsonpath='{.items[?(@.spec.displayName)].spec.version}' 2>/dev/null || echo "unknown")
+          # Try OGX operator first (RHOAI 3.5+), fall back to old LlamaStack operator
+          LS_OPERATOR_VERSION=$(oc get csv -n redhat-ods-operator -l operators.coreos.com/rhods-operator.redhat-ods-operator -o jsonpath='{.items[0].spec.version}' 2>/dev/null || echo "unknown")
           [ -z "$LS_OPERATOR_VERSION" ] && LS_OPERATOR_VERSION="unknown"
-          LS_IMAGE=$(oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
+          # Try OGXServer CR first, fall back to old LlamaStackDistribution
+          LS_IMAGE=$(oc get ogxserver $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.distribution.name}' 2>/dev/null || \
+            oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
           PG_IMAGE=$(oc get deployment postgres -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
         fi
 
@@ -176,13 +179,14 @@ spec:
           fi
         fi
 
-        # Collect ALL LlamaStack replica logs if present
-        LS_PODS=$(oc get pod -n $NS -l app=llama-stack -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-        if [ -n "$LS_PODS" ]; then
+        # Collect ALL OGX / LlamaStack replica logs if present
+        OGX_PODS=$(oc get pod -n $NS -l app=ogx -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+        [ -z "$OGX_PODS" ] && OGX_PODS=$(oc get pod -n $NS -l app=llama-stack -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$OGX_PODS" ]; then
           POD_IDX=0
-          for LS_POD in $LS_PODS; do
-            oc logs "$LS_POD" -n $NS > "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt" 2>&1 || true
-            echo "Captured LlamaStack logs from $LS_POD ($(wc -l < "$RESULTS_DIR/llamastack_logs_${POD_IDX}.txt") lines)"
+          for OGX_POD in $OGX_PODS; do
+            oc logs "$OGX_POD" -n $NS > "$RESULTS_DIR/ogx_logs_${POD_IDX}.txt" 2>&1 || true
+            echo "Captured OGX logs from $OGX_POD ($(wc -l < "$RESULTS_DIR/ogx_logs_${POD_IDX}.txt") lines)"
             POD_IDX=$((POD_IDX + 1))
           done
         fi

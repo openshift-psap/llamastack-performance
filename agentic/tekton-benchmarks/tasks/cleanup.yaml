@@ -11,7 +11,7 @@ spec:
     - name: NAMESPACE
       description: Namespace to cleanup
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: DISTRIBUTION_NAME
       description: Name of the LlamaStackDistribution to delete
       type: string

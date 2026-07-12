@@ -12,7 +12,7 @@ spec:
     - name: NAMESPACE
       description: Namespace to deploy LlamaStack
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: MANIFEST_PATH
       description: Path to LlamaStackDistribution manifest
       type: string

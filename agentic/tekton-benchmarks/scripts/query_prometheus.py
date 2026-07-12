@@ -244,6 +244,62 @@ def main():
     query_and_store("otel/thread_count",
         f'process_thread_count{{namespace="{ns}", service="otel-collector-collector"}}')
 
+    # --- OTel HTTP Server Percentiles ---
+    print("Querying OTel HTTP server percentiles...")
+    query_and_store("otel/http_server_duration_p50_ms",
+        f'histogram_quantile(0.50, sum(rate(http_server_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_server_duration_p95_ms",
+        f'histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_server_duration_p99_ms",
+        f'histogram_quantile(0.99, sum(rate(http_server_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_request_size_p95_bytes",
+        f'histogram_quantile(0.95, sum(rate(http_server_request_size_bytes_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_response_size_p95_bytes",
+        f'histogram_quantile(0.95, sum(rate(http_server_response_size_bytes_bucket{{namespace="{ns}"}}[1m])) by (le))')
+
+    # --- Asyncio Metrics ---
+    print("Querying asyncio metrics...")
+    query_and_store("otel/asyncio_duration_p50_s",
+        f'histogram_quantile(0.50, sum(rate(asyncio_process_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le, name))',
+        is_labeled=True, label_key="name")
+    query_and_store("otel/asyncio_duration_p95_s",
+        f'histogram_quantile(0.95, sum(rate(asyncio_process_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le, name))',
+        is_labeled=True, label_key="name")
+    query_and_store("otel/asyncio_op_rate",
+        f'sum(rate(asyncio_process_created_total{{namespace="{ns}"}}[1m])) by (name)',
+        is_labeled=True, label_key="name")
+
+    # --- OGX Native Metrics ---
+    print("Querying OGX native metrics...")
+    query_and_store("ogx/request_duration_p50_s",
+        f'histogram_quantile(0.50, sum(rate(ogx_request_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/request_duration_p95_s",
+        f'histogram_quantile(0.95, sum(rate(ogx_request_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/request_duration_p99_s",
+        f'histogram_quantile(0.99, sum(rate(ogx_request_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/inference_duration_p50_s",
+        f'histogram_quantile(0.50, sum(rate(ogx_inference_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/inference_duration_p95_s",
+        f'histogram_quantile(0.95, sum(rate(ogx_inference_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/inference_duration_p99_s",
+        f'histogram_quantile(0.99, sum(rate(ogx_inference_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/ttft_p50_s",
+        f'histogram_quantile(0.50, sum(rate(ogx_inference_time_to_first_token_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/ttft_p95_s",
+        f'histogram_quantile(0.95, sum(rate(ogx_inference_time_to_first_token_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/tokens_per_second_p50",
+        f'histogram_quantile(0.50, sum(rate(ogx_inference_tokens_per_second_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("ogx/request_rate",
+        f'sum(rate(ogx_requests_total{{namespace="{ns}"}}[1m]))')
+    query_and_store("ogx/concurrent_requests",
+        f'sum(ogx_concurrent_requests{{namespace="{ns}"}})')
+    query_and_store("ogx/request_rate_by_method",
+        f'sum(rate(ogx_requests_total{{namespace="{ns}"}}[1m])) by (method)',
+        is_labeled=True, label_key="method")
+    query_and_store("ogx/request_duration_by_method_p50_s",
+        f'histogram_quantile(0.50, sum(rate(ogx_request_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le, method))',
+        is_labeled=True, label_key="method")
+
     # --- vLLM Metrics ---
     print("Querying vLLM metrics...")
     query_and_store("vllm/requests_running",
@@ -554,8 +610,8 @@ def main():
     query_and_store("pod_cpu/cpu_cores",
         f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}", container!="", container!="POD"}}[5m])) by (pod)',
         is_labeled=True, label_key="pod")
-    query_and_store("pod_cpu/cpu_cores_llamastack",
-        f'rate(container_cpu_usage_seconds_total{{namespace="{ns}", container="llama-stack"}}[5m])',
+    query_and_store("pod_cpu/cpu_cores_ogx",
+        f'rate(container_cpu_usage_seconds_total{{namespace="{ns}", container="ogx"}}[5m])',
         is_labeled=True, label_key="pod")
     query_and_store("pod_cpu/context_switches_voluntary",
         f'rate(container_context_switches_total{{namespace="{ns}", container!="", container!="POD"}}[5m])',

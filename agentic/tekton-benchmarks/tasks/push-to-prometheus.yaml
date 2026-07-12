@@ -21,7 +21,7 @@ spec:
     - name: OTEL_SERVICE_NAME
       description: Service name to filter traces in Tempo
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: NAMESPACE
       description: Benchmark namespace (for trace filtering)
       type: string

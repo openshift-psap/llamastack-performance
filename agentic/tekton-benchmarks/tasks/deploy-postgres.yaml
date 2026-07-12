@@ -11,7 +11,7 @@ spec:
     - name: NAMESPACE
       description: Namespace to deploy PostgreSQL
       type: string
-      default: "llamastack"
+      default: "llamastack-bench"
     - name: MANIFEST_PATH
       description: Path to PostgreSQL manifest
       type: string
