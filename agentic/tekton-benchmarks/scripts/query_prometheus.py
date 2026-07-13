@@ -269,6 +269,15 @@ def main():
         f'sum(rate(asyncio_process_created_total{{namespace="{ns}"}}[1m])) by (name)',
         is_labeled=True, label_key="name")
 
+    # --- OTel HTTP Client (outbound OGX → inference backend) ---
+    print("Querying OTel HTTP client metrics...")
+    query_and_store("otel/http_client_duration_p50_ms",
+        f'histogram_quantile(0.50, sum(rate(http_client_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_client_duration_p95_ms",
+        f'histogram_quantile(0.95, sum(rate(http_client_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("otel/http_client_duration_p99_ms",
+        f'histogram_quantile(0.99, sum(rate(http_client_duration_milliseconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+
     # --- OGX Native Metrics ---
     print("Querying OGX native metrics...")
     query_and_store("ogx/request_duration_p50_s",
@@ -299,6 +308,9 @@ def main():
     query_and_store("ogx/request_duration_by_method_p50_s",
         f'histogram_quantile(0.50, sum(rate(ogx_request_duration_seconds_bucket{{namespace="{ns}"}}[1m])) by (le, method))',
         is_labeled=True, label_key="method")
+    query_and_store("ogx/responses_param_usage",
+        f'sum(rate(ogx_responses_parameter_usage_total{{namespace="{ns}"}}[1m])) by (parameter)',
+        is_labeled=True, label_key="parameter")
 
     # --- vLLM Metrics ---
     print("Querying vLLM metrics...")
