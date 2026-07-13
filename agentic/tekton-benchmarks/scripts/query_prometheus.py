@@ -312,8 +312,12 @@ def main():
         f'sum(rate(ogx_responses_parameter_usage_total{{namespace="{ns}"}}[1m])) by (parameter)',
         is_labeled=True, label_key="parameter")
 
-    # --- vLLM Metrics ---
-    print("Querying vLLM metrics...")
+    # --- vLLM / Simulator Metrics ---
+    print("Querying vLLM / simulator metrics...")
+    query_and_store("vllm/cache_config",
+        f'vllm:cache_config_info{{namespace="{ns}"}}')
+    query_and_store("vllm/lora_requests",
+        f'vllm:lora_requests_info{{namespace="{ns}"}}')
     query_and_store("vllm/requests_running",
         f'max(vllm:num_requests_running{{namespace="{ns}"}})')
     query_and_store("vllm/requests_waiting",
@@ -336,6 +340,32 @@ def main():
         f'histogram_quantile(0.50, sum(rate(vllm:request_queue_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
     query_and_store("vllm/inter_token_latency_p50_s",
         f'histogram_quantile(0.50, sum(rate(vllm:inter_token_latency_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/prefill_time_p50_s",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_prefill_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/prefill_time_p95_s",
+        f'histogram_quantile(0.95, sum(rate(vllm:request_prefill_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/decode_time_p50_s",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_decode_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/decode_time_p95_s",
+        f'histogram_quantile(0.95, sum(rate(vllm:request_decode_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/inference_time_p50_s",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_inference_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/inference_time_p95_s",
+        f'histogram_quantile(0.95, sum(rate(vllm:request_inference_time_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/time_per_output_token_p50_s",
+        f'histogram_quantile(0.50, sum(rate(vllm:time_per_output_token_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/time_per_output_token_p95_s",
+        f'histogram_quantile(0.95, sum(rate(vllm:time_per_output_token_seconds_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/request_success_rate",
+        f'sum(rate(vllm:request_success_total{{namespace="{ns}"}}[1m]))')
+    query_and_store("vllm/request_generation_tokens_p50",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_generation_tokens_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/request_prompt_tokens_p50",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_prompt_tokens_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/max_num_generation_tokens_p50",
+        f'histogram_quantile(0.50, sum(rate(vllm:max_num_generation_tokens_bucket{{namespace="{ns}"}}[1m])) by (le))')
+    query_and_store("vllm/request_params_max_tokens_p50",
+        f'histogram_quantile(0.50, sum(rate(vllm:request_params_max_tokens_bucket{{namespace="{ns}"}}[1m])) by (le))')
 
     # For long tests, re-query vLLM rate metrics with [5m] window
     if is_long_test:
