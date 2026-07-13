@@ -97,7 +97,7 @@ spec:
         GPU_PRODUCT=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].metadata.labels.nvidia\.com/gpu\.product}' 2>/dev/null || echo "unknown")
         GPU_COUNT=$(oc get nodes -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].status.capacity.nvidia\.com/gpu}' 2>/dev/null || echo "unknown")
 
-        # --- vLLM / RHAIIS info (always collected for any test type) ---
+        # --- Inference backend info (vLLM/RHAIIS or simulator) ---
         VLLM_IMAGE="unknown"
         VLLM_MODEL="unknown"
         VLLM_DTYPE="unknown"
@@ -120,19 +120,34 @@ spec:
               esac
             done
           fi
+        else
+          SIM_POD=$(oc get pod -n $NS -l app=inference-sim -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$SIM_POD" ]; then
+            VLLM_IMAGE=$(oc get pod $SIM_POD -n $NS -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+            SIM_ARGS=$(oc get pod $SIM_POD -n $NS -o jsonpath='{.spec.containers[0].args[*]}' 2>/dev/null || echo "")
+            for arg in $SIM_ARGS; do
+              case "$arg" in
+                --model=*) VLLM_MODEL="${arg#--model=}" ;;
+                --max-model-len=*) VLLM_MAX_MODEL_LEN="${arg#--max-model-len=}" ;;
+                --max-num-seqs=*) VLLM_DTYPE="max-num-seqs=${arg#--max-num-seqs=}" ;;
+              esac
+            done
+          fi
         fi
 
-        # --- OGX / LlamaStack info ---
+        # --- OGX info (collected if OGX pod or CR exists in namespace) ---
         LS_IMAGE="n/a"
         LS_OPERATOR_VERSION="n/a"
         PG_IMAGE="n/a"
-        if [ "$USER_CLASS" != "ChatCompletionsUser" ]; then
-          # Try OGX operator first (RHOAI 3.5+), fall back to old LlamaStack operator
+        OGX_POD=$(oc get pod -n $NS -l app=ogx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$OGX_POD" ]; then
           LS_OPERATOR_VERSION=$(oc get csv -n redhat-ods-operator -l operators.coreos.com/rhods-operator.redhat-ods-operator -o jsonpath='{.items[0].spec.version}' 2>/dev/null || echo "unknown")
           [ -z "$LS_OPERATOR_VERSION" ] && LS_OPERATOR_VERSION="unknown"
-          # Try OGXServer CR first, fall back to old LlamaStackDistribution
           LS_IMAGE=$(oc get ogxserver $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.distribution.name}' 2>/dev/null || \
             oc get llamastackdistribution $(params.DISTRIBUTION_NAME) -n $NS -o jsonpath='{.spec.server.distribution.image}' 2>/dev/null || echo "unknown")
+        fi
+        PG_POD_CHECK=$(oc get pod -n $NS -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$PG_POD_CHECK" ]; then
           PG_IMAGE=$(oc get deployment postgres -n $NS -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
         fi
 
