@@ -1,0 +1,214 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: simulator-direct-benchmark
+  namespace: tekton-llamastack
+spec:
+  description: |
+    Phase 1 — Direct Baseline: Locust → inference simulator (no OGX).
+    Deploys the simulator with configurable TTFT/ITL delay profile,
+    downloads pre-generated prompts, runs Locust ChatCompletions test,
+    queries Prometheus for simulator/cluster metrics, logs to MLflow, cleans up.
+  params:
+    - name: NAMESPACE
+      type: string
+      default: "llamastack-bench"
+    - name: TTFT_MS
+      type: string
+      default: "2000"
+      description: "Simulator time to first token (ms)"
+    - name: ITL_MS
+      type: string
+      default: "7"
+      description: "Simulator inter-token latency (ms)"
+    - name: USERS
+      type: string
+      default: "1024"
+    - name: SPAWN_RATE
+      type: string
+      default: "1024"
+    - name: RUN_TIME_SECONDS
+      type: string
+      default: "300"
+    - name: INPUT_TOKENS
+      type: string
+      default: "50"
+    - name: OUTPUT_TOKENS
+      type: string
+      default: "50"
+    - name: STREAM
+      type: string
+      default: "true"
+    - name: LOAD_SHAPE
+      type: string
+      default: "steady"
+    - name: CUSTOM_STAGES
+      type: string
+      default: "[]"
+    - name: EXTRA_ENV
+      type: string
+      default: ""
+    - name: WARMUP_SECONDS
+      type: string
+      default: "0"
+    - name: ENABLE_MLFLOW
+      type: string
+      default: "true"
+    - name: MLFLOW_EXPERIMENT
+      type: string
+      default: "simulator-direct-baseline"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      type: string
+      default: "direct"
+    - name: SKIP_DEPLOY
+      type: string
+      default: "false"
+    - name: SKIP_CLEANUP
+      type: string
+      default: "false"
+  workspaces:
+    - name: results
+  tasks:
+    - name: generate-configmap
+      taskRef:
+        name: generate-configmap
+
+    - name: deploy-simulator
+      taskRef:
+        name: deploy-inference-sim
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: TTFT_MS
+          value: $(params.TTFT_MS)
+        - name: ITL_MS
+          value: $(params.ITL_MS)
+        - name: SKIP_DEPLOY
+          value: $(params.SKIP_DEPLOY)
+
+    - name: generate-prompt
+      taskRef:
+        name: generate-prompt-sim
+      runAfter:
+        - deploy-simulator
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+
+    - name: run-locust
+      taskRef:
+        name: run-locust
+      runAfter:
+        - deploy-simulator
+        - generate-configmap
+        - generate-prompt
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: HOST
+          value: "http://inference-sim.$(params.NAMESPACE).svc.cluster.local:8000"
+        - name: USER_CLASS
+          value: "ChatCompletionsUser"
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MODEL
+          value: "simulator"
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
+        - name: EXTRA_ENV
+          value: $(params.EXTRA_ENV)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: DISTRIBUTION_NAME
+          value: "none"
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
+        - name: STREAM
+          value: $(params.STREAM)
+        - name: WARMUP_SECONDS
+          value: $(params.WARMUP_SECONDS)
+        - name: POSTGRES_METRICS_HOST
+          value: ""
+        - name: VLLM_METRICS_HOST
+          value: "inference-sim"
+        - name: VLLM_METRICS_PORT
+          value: "8000"
+
+    - name: query-prometheus
+      taskRef:
+        name: query-prometheus
+      runAfter:
+        - run-locust
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+
+    - name: log-mlflow
+      taskRef:
+        name: log-mlflow
+      runAfter:
+        - query-prometheus
+      when:
+        - input: $(params.ENABLE_MLFLOW)
+          operator: in
+          values: ["true"]
+      workspaces:
+        - name: results
+          workspace: results
+      params:
+        - name: MLFLOW_EXPERIMENT
+          value: $(params.MLFLOW_EXPERIMENT)
+        - name: MLFLOW_RUN_NAME_PREFIX
+          value: $(params.MLFLOW_RUN_NAME_PREFIX)
+        - name: USER_CLASS
+          value: "ChatCompletionsUser"
+        - name: USERS
+          value: $(params.USERS)
+        - name: SPAWN_RATE
+          value: $(params.SPAWN_RATE)
+        - name: RUN_TIME_SECONDS
+          value: $(params.RUN_TIME_SECONDS)
+        - name: MODEL
+          value: "simulator"
+        - name: LOAD_SHAPE
+          value: $(params.LOAD_SHAPE)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: INPUT_TOKENS
+          value: $(params.INPUT_TOKENS)
+        - name: OUTPUT_TOKENS
+          value: $(params.OUTPUT_TOKENS)
+        - name: EXTRA_ENV
+          value: "TTFT_MS=$(params.TTFT_MS)\nITL_MS=$(params.ITL_MS)"
+        - name: CUSTOM_STAGES
+          value: $(params.CUSTOM_STAGES)
+
+    - name: cleanup
+      taskRef:
+        name: cleanup
+      runAfter:
+        - log-mlflow
+      params:
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
+        - name: SKIP_CLEANUP
+          value: $(params.SKIP_CLEANUP)
+        - name: CLEANUP_VLLM
+          value: "false"
+        - name: CLEANUP_MCP
+          value: "false"

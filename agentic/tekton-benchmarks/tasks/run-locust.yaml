@@ -75,7 +75,11 @@ spec:
       type: string
     - name: VLLM_METRICS_HOST
       default: ""
-      description: Hostname for vLLM /metrics endpoint (port 8080)
+      description: Hostname for vLLM/simulator /metrics endpoint
+      type: string
+    - name: VLLM_METRICS_PORT
+      default: "8080"
+      description: "Port for vLLM/simulator /metrics endpoint (8080 for vLLM, 8000 for simulator)"
       type: string
     - name: GRAFANA_URL
       default: "http://grafana.llamastack-monitoring.svc:3000"
@@ -314,6 +318,8 @@ spec:
           value: $(params.POSTGRES_METRICS_HOST)
         - name: VLLM_HOST
           value: $(params.VLLM_METRICS_HOST)
+        - name: VLLM_PORT
+          value: $(params.VLLM_METRICS_PORT)
       volumeMounts:
         - mountPath: /shared
           name: shared
@@ -358,11 +364,11 @@ spec:
           # --- vLLM metrics (from :8080/metrics) ---
           VLLM_RUNNING=0; VLLM_WAITING=0; VLLM_GPU_CACHE=0; VLLM_THROUGHPUT=0
           if [ -n "$VLLM_HOST" ]; then
-            VLLM_BODY=$(curl -s --connect-timeout 2 "http://${VLLM_HOST}.${NAMESPACE}.svc:8080/metrics" 2>/dev/null || echo "")
+            VLLM_BODY=$(curl -s --connect-timeout 2 "http://${VLLM_HOST}.${NAMESPACE}.svc:${VLLM_PORT}/metrics" 2>/dev/null || echo "")
             if [ -n "$VLLM_BODY" ]; then
               VLLM_RUNNING=$(parse_metric "$VLLM_BODY" 'vllm:num_requests_running')
               VLLM_WAITING=$(parse_metric "$VLLM_BODY" 'vllm:num_requests_waiting')
-              VLLM_GPU_CACHE=$(parse_metric "$VLLM_BODY" 'vllm:gpu_cache_usage_perc')
+              VLLM_GPU_CACHE=$(parse_metric "$VLLM_BODY" 'vllm:kv_cache_usage_perc')
               VLLM_THROUGHPUT=$(parse_metric "$VLLM_BODY" 'vllm:avg_generation_throughput_toks_per_s')
             fi
           fi
