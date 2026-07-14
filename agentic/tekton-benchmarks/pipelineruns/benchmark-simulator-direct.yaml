@@ -1,0 +1,47 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: sim-direct-
+  namespace: tekton-llamastack
+  labels:
+    phase: "1"
+    experiment: "simulator-direct-baseline"
+spec:
+  pipelineRef:
+    name: simulator-direct-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+    podTemplate:
+      nodeSelector:
+        node-role: loadgen
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  params:
+    - name: TTFT_MS
+      value: "2000"
+    - name: ITL_MS
+      value: "7"
+    - name: USERS
+      value: "1024"
+    - name: SPAWN_RATE
+      value: "1024"
+    - name: RUN_TIME_SECONDS
+      value: "300"
+    - name: INPUT_TOKENS
+      value: "50"
+    - name: OUTPUT_TOKENS
+      value: "50"
+    - name: STREAM
+      value: "true"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "simulator-direct-baseline"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      value: "test-pipeline"

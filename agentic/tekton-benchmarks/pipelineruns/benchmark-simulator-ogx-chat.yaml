@@ -1,0 +1,49 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: sim-ogx-chat-
+  namespace: tekton-llamastack
+  labels:
+    phase: "2"
+    experiment: "simulator-ogx-chat-completion"
+spec:
+  pipelineRef:
+    name: simulator-ogx-chat-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+    podTemplate:
+      nodeSelector:
+        node-role: loadgen
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  params:
+    - name: TTFT_MS
+      value: "2000"
+    - name: ITL_MS
+      value: "7"
+    - name: USERS
+      value: "16"
+    - name: SPAWN_RATE
+      value: "16"
+    - name: RUN_TIME_SECONDS
+      value: "300"
+    - name: INPUT_TOKENS
+      value: "50"
+    - name: OUTPUT_TOKENS
+      value: "50"
+    - name: STREAM
+      value: "true"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "simulator-ogx-chat-completion"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      value: "test-pipeline"
+    - name: SKIP_CLEANUP
+      value: "false"
