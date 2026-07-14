@@ -36,6 +36,8 @@ spec:
               key: POSTGRES_PASSWORD
         - name: POSTGRES_POOL_SIZE
           value: "50"
+        - name: PGSSLMODE
+          value: "disable"
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector:4318"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
