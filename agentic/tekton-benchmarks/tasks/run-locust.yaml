@@ -346,7 +346,7 @@ spec:
           if [ -n "$POSTGRES_HOST" ]; then
             PG_BODY=$(curl -s --connect-timeout 2 "http://${POSTGRES_HOST}.${NAMESPACE}.svc:9187/metrics" 2>/dev/null || echo "")
             if [ -n "$PG_BODY" ]; then
-              PG_ACTIVE=$(echo "$PG_BODY" | grep '^pg_stat_activity_count{' | grep 'datname="llamastack"' | awk '{sum += $2} END {print sum+0}')
+              PG_ACTIVE=$(echo "$PG_BODY" | grep '^pg_stat_activity_count{' | awk '{sum += $2} END {print sum+0}')
               PG_COMMITS=$(echo "$PG_BODY" | grep '^pg_stat_database_xact_commit{' | grep 'datname="llamastack"' | awk '{print $2}')
               PG_ROLLBACKS=$(echo "$PG_BODY" | grep '^pg_stat_database_xact_rollback{' | grep 'datname="llamastack"' | awk '{print $2}')
               PG_BLKS_HIT=$(echo "$PG_BODY" | grep '^pg_stat_database_blks_hit{' | grep 'datname="llamastack"' | awk '{print $2}')
