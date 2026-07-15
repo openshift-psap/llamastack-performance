@@ -215,7 +215,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     model_short = test_params.get("model", "unknown").split("/")[-1]
     users = test_params.get("users", "?")
-    run_name = f"{args.run_name_prefix}-{model_short}-{users}u-{timestamp}"
+    run_name = f"{args.run_name_prefix}-{model_short}-{timestamp}"
 
     batch_params = [Param(key=k, value=str(v)) for k, v in test_params.items()]
     for k, v in cluster_versions.items():
