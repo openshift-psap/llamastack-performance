@@ -81,7 +81,7 @@ spec:
   endpoints:
     - port: http
       path: /metrics
-      interval: 15s
+      interval: 5s
   selector:
     matchLabels:
       app: inference-sim

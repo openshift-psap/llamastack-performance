@@ -134,7 +134,7 @@ spec:
           endpoints:
             - port: http
               path: /metrics
-              interval: 15s
+              interval: 5s
           selector:
             matchLabels:
               serving.kserve.io/inferenceservice: $(params.MODEL_NAME)

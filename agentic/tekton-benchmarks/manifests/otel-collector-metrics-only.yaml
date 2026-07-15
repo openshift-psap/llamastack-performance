@@ -100,7 +100,7 @@ metadata:
 spec:
   endpoints:
     - port: prometheus
-      interval: 15s
+      interval: 5s
   selector:
     matchLabels:
       app: otel-collector

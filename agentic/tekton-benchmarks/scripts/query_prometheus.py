@@ -37,8 +37,8 @@ def compute_step(duration_seconds):
     """Choose query step size based on test duration.
     Short tests keep fine granularity; long tests use coarser steps
     to stay within thanos-querier response limits (~11,000 points max)."""
-    if duration_seconds <= 3600:       # ≤1h  → 15s step (~240 points)
-        return "15s"
+    if duration_seconds <= 3600:       # ≤1h  → 5s step (~720 points)
+        return "5s"
     elif duration_seconds <= 14400:    # ≤4h  → 30s step (~480-1800 points)
         return "30s"
     elif duration_seconds <= 86400:    # ≤24h → 60s step (~1440-… points)

@@ -193,7 +193,7 @@ spec:
         spec:
           endpoints:
             - port: prometheus
-              interval: 15s
+              interval: 5s
           selector:
             matchLabels:
               app: otel-collector
@@ -218,7 +218,7 @@ spec:
           endpoints:
             - port: gpu-metrics
               path: /metrics
-              interval: 15s
+              interval: 5s
           selector:
             matchLabels:
               app: nvidia-dcgm-exporter
@@ -357,7 +357,7 @@ spec:
         spec:
           endpoints:
             - port: prometheus
-              interval: 15s
+              interval: 5s
           selector:
             matchLabels:
               app: otel-collector
@@ -379,7 +379,7 @@ spec:
           endpoints:
             - port: gpu-metrics
               path: /metrics
-              interval: 15s
+              interval: 5s
           selector:
             matchLabels:
               app: nvidia-dcgm-exporter
