@@ -64,7 +64,7 @@ spec:
                   [ "$TAG" = "$RESUME_FROM" ] && SKIP=false && log "Resuming from $TAG" || { log "[$RUN_COUNTER/$TOTAL_RUNS] Skip $TAG"; continue; }
                 fi
 
-                RUN_NAME="resp-${PROFILE}-${USERS}u-${TOKENS}tok-r${REP}"
+                RUN_NAME="3.5-ea2-resp-${PROFILE}-${USERS}u-${TOKENS}tok-r${REP}"
                 GEN_NAME="p3-resp-${PROFILE:0:1}-${USERS}u-${TOKENS}t-r${REP}-"
 
                 log "============================================================"

@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phase3-responses-all
+  namespace: tekton-llamastack
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: tekton-deployer
+      restartPolicy: Never
+      containers:
+      - name: runner
+        image: quay.io/openshift/origin-cli:latest
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+
+          BASE_URL="https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/scripts"
+          NS="tekton-llamastack"
+
+          log() { echo "[$(date '+%H:%M:%S')] $*"; }
+
+          run_job() {
+            local name="$1" url="$2"
+            log "Creating job: $name"
+            curl -sL "$url" | oc create -f -
+            log "Waiting for job $name to complete..."
+            oc wait --for=condition=complete job/$name -n $NS --timeout=48h || {
+              log "Job $name FAILED"
+              return 1
+            }
+            log "Job $name completed successfully"
+            oc delete job $name -n $NS
+          }
+
+          log "Phase 3 — Running all 3 profiles sequentially"
+
+          run_job "phase3-responses-fast"      "$BASE_URL/phase3-responses-fast-job.yaml"
+          run_job "phase3-responses-moderate"   "$BASE_URL/phase3-responses-moderate-job.yaml"
+          run_job "phase3-responses-realistic"  "$BASE_URL/phase3-responses-realistic-job.yaml"
+
+          log "Phase 3 — All profiles complete"
