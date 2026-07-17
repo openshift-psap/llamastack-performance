@@ -26,12 +26,19 @@ spec:
             local name="$1" url="$2"
             log "Creating job: $name"
             curl -sL "$url" | oc create -f -
-            log "Waiting for job $name to complete..."
-            oc wait --for=condition=complete job/$name -n $NS --timeout=48h || {
-              log "Job $name FAILED"
-              return 1
-            }
-            log "Job $name completed successfully"
+            log "Waiting for job $name to finish..."
+            while true; do
+              COMPLETE=$(oc get job $name -n $NS -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
+              FAILED=$(oc get job $name -n $NS -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
+              if [ "$COMPLETE" = "True" ]; then
+                log "Job $name completed successfully"
+                break
+              elif [ "$FAILED" = "True" ]; then
+                log "Job $name finished with some failures (continuing to next profile)"
+                break
+              fi
+              sleep 30
+            done
             oc delete job $name -n $NS
           }
 
