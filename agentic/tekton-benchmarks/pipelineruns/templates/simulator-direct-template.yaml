@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: __GENERATE_NAME__
+  namespace: tekton-llamastack
+  labels:
+    phase: "1"
+    experiment: "__EXPERIMENT__"
+    users: "__USERS__"
+    tokens: "__TOKENS__"
+    repetition: "__REP__"
+    profile: "__PROFILE__"
+spec:
+  pipelineRef:
+    name: simulator-direct-benchmark
+  taskRunTemplate:
+    serviceAccountName: tekton-deployer
+    podTemplate:
+      nodeSelector:
+        node-role: loadgen
+  workspaces:
+    - name: results
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  params:
+    - name: TTFT_MS
+      value: "__TTFT_MS__"
+    - name: ITL_MS
+      value: "__ITL_MS__"
+    - name: USERS
+      value: "__USERS__"
+    - name: SPAWN_RATE
+      value: "__USERS__"
+    - name: RUN_TIME_SECONDS
+      value: "__RUN_TIME__"
+    - name: INPUT_TOKENS
+      value: "__TOKENS__"
+    - name: OUTPUT_TOKENS
+      value: "__TOKENS__"
+    - name: STREAM
+      value: "true"
+    - name: WARMUP_SECONDS
+      value: "__WARMUP__"
+    - name: ENABLE_MLFLOW
+      value: "true"
+    - name: MLFLOW_EXPERIMENT
+      value: "__EXPERIMENT__"
+    - name: MLFLOW_RUN_NAME_PREFIX
+      value: "__RUN_NAME__"
+    - name: SKIP_CLEANUP
+      value: "false"
