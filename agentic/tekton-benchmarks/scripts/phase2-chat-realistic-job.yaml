@@ -1,0 +1,106 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phase2-chat-realistic
+  namespace: tekton-llamastack
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: tekton-deployer
+      restartPolicy: Never
+      containers:
+      - name: runner
+        image: quay.io/openshift/origin-cli:latest
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+
+          TEKTON_NS="tekton-llamastack"
+          TEMPLATE_URL="https://raw.githubusercontent.com/openshift-psap/llamastack-performance/main/agentic/tekton-benchmarks/pipelineruns/templates/simulator-ogx-chat-template.yaml"
+          EXPERIMENT="simulator-ogx-chat-realistic"
+          PROFILE="realistic"
+          TTFT_MS="3700"
+          ITL_MS="85"
+          WARMUP="30"
+          RUN_TIME="300"
+
+          CONCURRENCY_LEVELS="1 4 16 64 128 256 384 512 768 1024"
+          PAYLOAD_SIZES="50 500 2000"
+          REPS=3
+          NUM_CONCURRENCY=$(echo $CONCURRENCY_LEVELS | wc -w | tr -d ' ')
+          NUM_PAYLOADS=$(echo $PAYLOAD_SIZES | wc -w | tr -d ' ')
+          TOTAL_RUNS=$((NUM_CONCURRENCY * NUM_PAYLOADS * REPS))
+          RESUME_FROM="${RESUME_FROM:-}"
+
+          RUN_COUNTER=0; PASS=0; FAIL=0; START=$(date +%s)
+          log() { echo "[$(date '+%H:%M:%S')] $*"; }
+          elapsed() { printf "%dh %02dm %02ds" $(($1/3600)) $(($1%3600/60)) $(($1%60)); }
+
+          wait_pr() {
+            log "Waiting for $1..."
+            while true; do
+              S=$(oc get pipelinerun "$1" -n "$TEKTON_NS" -o jsonpath='{.status.conditions[0].reason}' 2>/dev/null || echo "Pending")
+              case "$S" in
+                Succeeded) log "$1 SUCCEEDED"; return 0 ;;
+                Failed|PipelineRunCancelled|CouldntGetPipeline|CreateRunFailed) log "$1 FAILED ($S)"; return 1 ;;
+                *) sleep 15 ;;
+              esac
+            done
+          }
+
+          TEMPLATE=$(curl -sL "$TEMPLATE_URL")
+          SKIP=false; [ -n "$RESUME_FROM" ] && SKIP=true && log "Will resume from $RESUME_FROM"
+
+          log "Phase 2 — OGX Chat ($PROFILE $TTFT_MS/$ITL_MS) — $TOTAL_RUNS runs"
+
+          for TOKENS in $PAYLOAD_SIZES; do
+            for USERS in $CONCURRENCY_LEVELS; do
+              for REP in $(seq 1 $REPS); do
+                RUN_COUNTER=$((RUN_COUNTER + 1))
+                TAG="${TOKENS}-${USERS}-${REP}"
+                if [ "$SKIP" = true ]; then
+                  [ "$TAG" = "$RESUME_FROM" ] && SKIP=false && log "Resuming from $TAG" || { log "[$RUN_COUNTER/$TOTAL_RUNS] Skip $TAG"; continue; }
+                fi
+
+                RUN_NAME="3.5-ea2-chat-${PROFILE}-${USERS}u-${TOKENS}tok-r${REP}"
+                GEN_NAME="p2-chat-${PROFILE:0:1}-${USERS}u-${TOKENS}t-r${REP}-"
+
+                log "============================================================"
+                log "[$RUN_COUNTER/$TOTAL_RUNS] $RUN_NAME"
+                log "  Users: $USERS | Tokens: ${TOKENS}/${TOKENS} | Profile: $PROFILE $TTFT_MS/$ITL_MS | Rep: $REP/$REPS"
+                log "============================================================"
+
+                PR_NAME=$(echo "$TEMPLATE" | sed \
+                  -e "s|__GENERATE_NAME__|$GEN_NAME|g" \
+                  -e "s|__EXPERIMENT__|$EXPERIMENT|g" \
+                  -e "s|__PROFILE__|$PROFILE|g" \
+                  -e "s|__TTFT_MS__|$TTFT_MS|g" \
+                  -e "s|__ITL_MS__|$ITL_MS|g" \
+                  -e "s|__USERS__|$USERS|g" \
+                  -e "s|__TOKENS__|$TOKENS|g" \
+                  -e "s|__REP__|$REP|g" \
+                  -e "s|__RUN_TIME__|$RUN_TIME|g" \
+                  -e "s|__WARMUP__|$WARMUP|g" \
+                  -e "s|__RUN_NAME__|$RUN_NAME|g" \
+                  | oc create -f - -n "$TEKTON_NS" -o jsonpath='{.metadata.name}')
+
+                log "Created PipelineRun: $PR_NAME"
+
+                if wait_pr "$PR_NAME"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); log "Continuing..."; fi
+
+                E=$(($(date +%s)-START))
+                R=$((TOTAL_RUNS-RUN_COUNTER))
+                [ $RUN_COUNTER -gt 0 ] && log "Progress: $RUN_COUNTER/$TOTAL_RUNS | Elapsed: $(elapsed $E) | ETA: $(elapsed $((E/RUN_COUNTER*R)))"
+                echo ""
+              done
+            done
+          done
+
+          T=$(($(date +%s)-START))
+          log "============================================================"
+          log "Phase 2 — OGX Chat ($PROFILE) Complete"
+          log "Passed: $PASS | Failed: $FAIL | Time: $(elapsed $T)"
+          log "============================================================"
+          [ $FAIL -gt 0 ] && exit 1 || exit 0
