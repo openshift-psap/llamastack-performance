@@ -29,9 +29,9 @@ spec:
         - "--max-model-len"
         - "8192"
         - "--time-to-first-token"
-        - "1ms"
+        - "800ms"
         - "--inter-token-latency"
-        - "1ms"
+        - "30ms"
         - "--mode"
         - "random"
         ports:
