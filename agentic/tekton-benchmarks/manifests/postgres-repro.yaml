@@ -1,0 +1,120 @@
+# PostgreSQL for bug reproduction (no custom exporter queries ConfigMap).
+# Namespace is NOT hardcoded - use: oc apply -f postgres-repro.yaml -n <namespace>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+stringData:
+  POSTGRES_DB: llamastack
+  POSTGRES_USER: llamastack
+  POSTGRES_PASSWORD: SecurePassword123
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      nodeSelector:
+        node-role: postgres
+      securityContext:
+        fsGroup: 26
+      containers:
+      - name: postgres
+        image: registry.redhat.io/rhel10/postgresql-18:10.2
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRESQL_MAX_CONNECTIONS
+          value: "300"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/pgsql/data
+      - name: postgres-exporter
+        image: quay.io/prometheuscommunity/postgres-exporter:v0.19.1
+        args:
+        - "--collector.stat_checkpointer"
+        ports:
+        - containerPort: 9187
+          name: metrics
+        env:
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: DATA_SOURCE_NAME
+          value: "postgresql://$(POSTGRESQL_USER):$(POSTGRESQL_PASSWORD)@localhost:5432/$(POSTGRESQL_DATABASE)?sslmode=disable"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+  labels:
+    app: postgres
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9187"
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+    name: postgres
+  - protocol: TCP
+    port: 9187
+    targetPort: 9187
+    name: metrics
+  type: ClusterIP
