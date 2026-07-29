@@ -124,14 +124,27 @@ spec:
           SIM_POD=$(oc get pod -n $NS -l app=inference-sim -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$SIM_POD" ]; then
             VLLM_IMAGE=$(oc get pod $SIM_POD -n $NS -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || echo "unknown")
-            SIM_ARGS=$(oc get pod $SIM_POD -n $NS -o jsonpath='{.spec.containers[0].args[*]}' 2>/dev/null || echo "")
-            for arg in $SIM_ARGS; do
+            SIM_ARGS=$(oc get pod $SIM_POD -n $NS -o jsonpath='{range .spec.containers[0].args[*]}{@}{"\n"}{end}' 2>/dev/null || echo "")
+            NEXT_FOR=""
+            while IFS= read -r arg; do
+              if [ -n "$NEXT_FOR" ]; then
+                case "$NEXT_FOR" in
+                  model) VLLM_MODEL="$arg" ;;
+                  max-model-len) VLLM_MAX_MODEL_LEN="$arg" ;;
+                  max-num-seqs) VLLM_DTYPE="max-num-seqs=$arg" ;;
+                esac
+                NEXT_FOR=""
+                continue
+              fi
               case "$arg" in
+                --model) NEXT_FOR="model" ;;
                 --model=*) VLLM_MODEL="${arg#--model=}" ;;
+                --max-model-len) NEXT_FOR="max-model-len" ;;
                 --max-model-len=*) VLLM_MAX_MODEL_LEN="${arg#--max-model-len=}" ;;
+                --max-num-seqs) NEXT_FOR="max-num-seqs" ;;
                 --max-num-seqs=*) VLLM_DTYPE="max-num-seqs=${arg#--max-num-seqs=}" ;;
               esac
-            done
+            done <<< "$SIM_ARGS"
           fi
         fi
 
