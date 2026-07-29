@@ -1,0 +1,62 @@
+# OGXServer connected to the inference simulator — with OTel tracing enabled
+# Same as ogxserver-sim.yaml but exports traces to the OTel collector (→ Tempo).
+#
+# Requires: RHOAI 3.5+ with ogx: Managed in the DSC.
+# PostgreSQL must be deployed separately (service name: postgres-db).
+# Inference simulator must be deployed (service name: inference-sim).
+# OTel Collector with trace forwarding must be deployed (use deploy-tracing task).
+apiVersion: ogx.io/v1beta1
+kind: OGXServer
+metadata:
+  name: ogx-benchmark
+spec:
+  distribution:
+    name: rh-dev
+  workload:
+    replicas: 1
+    overrides:
+      env:
+        - name: VLLM_URL
+          value: "http://inference-sim:8000/v1"
+        - name: INFERENCE_MODEL
+          value: "simulator"
+        - name: VLLM_TLS_VERIFY
+          value: "false"
+        - name: POSTGRES_HOST
+          value: "postgres-db"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "llamastack"
+        - name: POSTGRES_USER
+          value: "llamastack"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_POOL_SIZE
+          value: "50"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_SERVICE_NAME
+          value: "ogx"
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_LOGS_EXPORTER
+          value: "none"
+    storage:
+      size: 20Gi
+  network:
+    policy:
+      ingress:
+      - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tekton-llamastack
+        ports:
+        - port: 8321
+          protocol: TCP
